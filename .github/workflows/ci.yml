@@ -1,0 +1,38 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: typecheck + unit tests (node ${{ matrix.node }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ["20", "22", "24"]
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+
+      # --ignore-scripts: nothing here needs lifecycle scripts, and skipping them keeps
+      # a compromised transitive dependency from executing in CI.
+      - run: npm ci --ignore-scripts
+
+      - run: npm run typecheck
+
+      # Unit tests only. The integration suite drives the real `pi` binary against a live
+      # Claude subscription, so it can't run here — see `npm run test:integration`.
+      - run: npm test

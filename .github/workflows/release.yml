@@ -1,0 +1,134 @@
+name: Release
+
+# Tag-driven. `git tag v0.2.0 && git push origin v0.2.0` cuts a release.
+#
+# Publishing to npm is OFF by default: the GitHub Release alone is enough to install with
+#   pi install git:github.com/zottiben/pi-claude-subscription@v0.2.0
+# To turn npm publishing on, see the `publish-npm` job at the bottom.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: verify
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+          cache: npm
+
+      - run: npm ci --ignore-scripts
+
+      # A tag that disagrees with package.json ships a package whose version is a lie, and
+      # npm would later reject or misorder it. Fail loudly instead.
+      - name: Check tag matches package.json version
+        id: version
+        run: |
+          PKG_VERSION="$(node -p "require('./package.json').version")"
+          echo "version=$PKG_VERSION" >> "$GITHUB_OUTPUT"
+          if [ "${GITHUB_REF_TYPE}" != "tag" ]; then
+            echo "Not a tag build; skipping tag/version match check."
+            exit 0
+          fi
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          if [ "$TAG_VERSION" != "$PKG_VERSION" ]; then
+            echo "::error::Tag ${GITHUB_REF_NAME} does not match package.json version ${PKG_VERSION}."
+            exit 1
+          fi
+          echo "Tag ${GITHUB_REF_NAME} matches package.json version ${PKG_VERSION}."
+
+      - run: npm run typecheck
+      - run: npm test
+
+      # The tarball is what `pi install npm:` would consume. Verify the extension entry
+      # point named in package.json is actually inside it — a bad `files` list produces a
+      # package that installs cleanly and then fails to load.
+      - name: Verify packaged contents
+        run: |
+          npm pack --dry-run --json > pack.json
+          node -e "
+            const pack = require('./pack.json')[0];
+            const files = pack.files.map(f => f.path);
+            const entry = require('./package.json').pi.extensions[0].replace(/^\.\//, '');
+            if (!files.includes(entry)) {
+              console.error('Missing extension entry point in package:', entry);
+              console.error('Packaged files:', files.join(', '));
+              process.exit(1);
+            }
+            console.log('Package OK:', pack.filename, files.length, 'files,', entry, 'present');
+          "
+
+  github-release:
+    name: github release
+    needs: verify
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+          REPO: ${{ github.repository }}
+        run: |
+          # Install instructions first, then gh appends the auto-generated changelog.
+          cat > release-notes.md <<EOF
+          ## Install
+
+          \`\`\`
+          pi install git:github.com/${REPO}@${TAG}
+          \`\`\`
+          EOF
+
+          gh release create "$TAG" \
+            --title "$TAG" \
+            --notes-file release-notes.md \
+            --generate-notes
+
+  # --- npm publishing (disabled by default) ---
+  #
+  # To enable:
+  #   1. Create a granular automation token at npmjs.com with publish rights.
+  #   2. Add it as the repository secret NPM_TOKEN.
+  #   3. Add a repository variable PUBLISH_TO_NPM with the value "true".
+  #
+  # Until step 3 the job is skipped, so the tag still produces a GitHub Release.
+  # `id-token: write` plus --provenance attaches a signed provenance attestation linking
+  # the published tarball to this workflow run.
+  publish-npm:
+    name: publish to npm
+    needs: verify
+    if: github.ref_type == 'tag' && vars.PUBLISH_TO_NPM == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+          cache: npm
+          registry-url: https://registry.npmjs.org
+
+      - run: npm ci --ignore-scripts
+
+      - run: npm publish --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

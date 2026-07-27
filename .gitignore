@@ -1,0 +1,7 @@
+node_modules/
+.pi/
+.claude/
+.test-output/
+*.tsbuildinfo
+.env.test
+.DS_Store
