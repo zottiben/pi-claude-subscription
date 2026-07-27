@@ -64,6 +64,14 @@ describe("buildModels", () => {
 });
 
 describe("resolveClaudeCodeRuntimeModel", () => {
+	it("gives Opus 5 1M on every plan, with no gating", () => {
+		for (const settings of [PRO, MAX, PRO_EXTRA]) {
+			assert.deepEqual(resolveClaudeCodeRuntimeModel("claude-opus-5", settings), {
+				cliModelId: "claude-opus-5[1m]", contextWindow: ONE_M_CONTEXT,
+			});
+		}
+	});
+
 	it("gives Opus 4.8 1M via an explicit [1m] suffix", () => {
 		assert.deepEqual(resolveClaudeCodeRuntimeModel("claude-opus-4-8", PRO), {
 			cliModelId: "claude-opus-4-8[1m]", contextWindow: ONE_M_CONTEXT,
@@ -140,9 +148,15 @@ describe("applyLongContext", () => {
 describe("resolveModel", () => {
 	const models = MODEL_IDS_IN_ORDER.map((id) => ({ id }));
 
+	// AskClaudeCode defaults to model "opus", so this decides what a plain delegation gets.
 	it("resolves a bare family name to the first entry in picker order", () => {
-		assert.equal(resolveModel(models, "opus")?.id, "claude-opus-4-8");
+		assert.equal(resolveModel(models, "opus")?.id, "claude-opus-5");
 		assert.equal(resolveModel(models, "sonnet")?.id, "claude-sonnet-5");
+	});
+
+	it("still resolves an explicit older id", () => {
+		assert.equal(resolveModel(models, "claude-opus-4-8")?.id, "claude-opus-4-8");
+		assert.equal(resolveModel(models, "opus-4-7")?.id, "claude-opus-4-7");
 	});
 
 	it("matches an exact id case-insensitively", () => {

@@ -69,6 +69,7 @@ Use `/model` and pick one of:
 
 | Model | Context |
 |---|---|
+| `claude-subscription/claude-opus-5` | 1M |
 | `claude-subscription/claude-fable-5` | 1M |
 | `claude-subscription/claude-opus-4-8` | 1M |
 | `claude-subscription/claude-opus-4-7` | 1M |
@@ -84,8 +85,8 @@ timeout to match Claude Code, since pi's bash has none.
 Your `AGENTS.md` and pi's skills block are forwarded into Claude Code's system prompt, with
 pi-specific paths rewritten to their Claude Code equivalents.
 
-**1M context.** Opus 4.7 and 4.8, Fable 5 and Sonnet 5 get 1M by default. Opus 4.6 needs a
-Max plan or Extra Usage; Sonnet 4.6 needs Extra Usage on any plan. Set `provider.plan` and
+**1M context.** Opus 5, Opus 4.7 and 4.8, Fable 5 and Sonnet 5 get 1M by default. Opus 4.6
+needs a Max plan or Extra Usage; Sonnet 4.6 needs Extra Usage on any plan. Set `provider.plan` and
 `provider.longContextExtraUsage` accordingly — see [Configuration](#configuration). The
 window registered with pi always matches what the extension actually requests, so pi's
 status bar and auto-compaction threshold stay accurate.
@@ -105,7 +106,7 @@ Available whenever the active provider is *not* `claude-subscription`. Examples:
 |---|---|
 | `prompt` | The question or task. Claude sees the full conversation by default — let it explore rather than researching up front. |
 | `mode` | `read` (default), `none`, or `full` (read + write + bash). Disable `full` with `allowFullMode: false`. |
-| `model` | `opus` (default), `sonnet`, `haiku`, or a full model id. |
+| `model` | `opus` (default, currently resolves to Opus 5), `sonnet`, `haiku`, or a full model id. |
 | `thinking` | `off`, `minimal`, `low`, `medium`, `high`, `xhigh`. |
 | `isolated` | `true` gives Claude a clean session with no conversation history. Default `false`. |
 
@@ -166,6 +167,7 @@ npm run typecheck     # tsc --noEmit, strict
 npm test              # unit tests, offline
 npm run check         # both of the above — what CI runs
 npm run test:integration   # drives the real `pi` binary, uses subscription quota
+npm run diag:context       # re-measure served context windows per model id
 ```
 
 The integration suite needs `pi` on your PATH and a logged-in Claude Code. It is
@@ -203,9 +205,18 @@ Unconditional diagnostics for should-never-happen paths land in
 
 ## Maintenance
 
-After a Claude Code release, review `MODE_DISALLOWED_TOOLS` in `src/ask-claude.ts`. It gates
-which Claude Code tools an AskClaude delegation may invoke per mode; new agentic tools that
-shouldn't be reachable from a subagent belong in the appropriate list.
+After a Claude Code release:
+
+- Review `MODE_DISALLOWED_TOOLS` in `src/ask-claude.ts`. It gates which Claude Code tools an
+  AskClaudeCode delegation may invoke per mode; new agentic tools that shouldn't be
+  reachable from a subagent belong in the appropriate list.
+- Re-run `npm run diag:context` and reconcile `src/models.ts` against it. The served context
+  window is entitlement, not a property of the model, and it has changed before — see
+  [diag/CONTEXT-SIZE.md](diag/CONTEXT-SIZE.md).
+
+Adding a model means one entry in `MODEL_IDS_IN_ORDER` and one case in
+`resolveClaudeCodeRuntimeModel`, both in `src/models.ts`. Ids that pi-ai doesn't know are
+dropped silently, so a model only appears once pi-ai ships it too.
 
 ## Releasing
 

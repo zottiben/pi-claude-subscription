@@ -7,6 +7,7 @@ import type { Api, Model } from "@earendil-works/pi-ai";
 /** Canonical selection + display order for the model picker. `resolveModel` returns the
  *  first partial match, so `"opus"` resolves to the first opus entry listed here. */
 export const MODEL_IDS_IN_ORDER = [
+	"claude-opus-5",
 	"claude-fable-5",
 	"claude-opus-4-8",
 	"claude-opus-4-7",
@@ -90,6 +91,11 @@ export const ONE_M_CONTEXT = 1_000_000;
  */
 export function resolveClaudeCodeRuntimeModel(modelId: string, settings: LongContextSettings): ClaudeCodeRuntimeModel {
 	switch (modelId) {
+		// Measured 1M both bare and with [1m], no rejection. The suffix is kept because it
+		// requests 1M explicitly rather than depending on a default entitlement, and that
+		// default has already changed once (see diag/CONTEXT-SIZE.md).
+		case "claude-opus-5":
+			return { cliModelId: "claude-opus-5[1m]", contextWindow: ONE_M_CONTEXT };
 		case "claude-opus-4-8":
 			return { cliModelId: "claude-opus-4-8[1m]", contextWindow: ONE_M_CONTEXT };
 		case "claude-opus-4-7":
