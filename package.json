@@ -21,7 +21,7 @@
   },
   "homepage": "https://github.com/zottiben/pi-claude-subscription#readme",
   "engines": {
-    "node": ">=20"
+    "node": ">=22.19.0"
   },
   "type": "module",
   "files": [

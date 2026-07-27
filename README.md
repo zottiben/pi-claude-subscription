@@ -158,6 +158,8 @@ providers, so changing `contextWindow` means editing `src/models.ts`.
 
 ## Development
 
+Node >= 22.19.0, the floor set by pi's own packages.
+
 ```
 npm install
 npm run typecheck     # tsc --noEmit, strict
