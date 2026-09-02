@@ -23,7 +23,7 @@ TypeScript throughout, `strict` mode, no build step — pi loads the `.ts` sourc
 From GitHub (no npm account needed):
 
 ```
-pi install git:github.com/zottiben/pi-claude-subscription@v0.1.0
+pi install git:github.com/zottiben/pi-claude-subscription@v0.2.0
 ```
 
 Or from a local checkout, which is also the best way to develop — the path is referenced
