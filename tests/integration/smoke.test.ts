@@ -68,7 +68,9 @@ describe("extension registration", { timeout: TIMEOUT_MS }, () => {
 	it("registers every catalogue model with pi", async () => {
 		const { stdout, code } = await runPi(["--list-models", "claude-subscription"]);
 		assert.equal(code, 0);
-		for (const id of ["claude-opus-5", "claude-opus-4-8", "claude-sonnet-5", "claude-haiku-4-5", "claude-fable-5"]) {
+		// claude-fable-5-1 is the case pi-ai has no catalogue entry for, so it only appears if
+		// the local fallback survives a real registration through pi.
+		for (const id of ["claude-opus-5", "claude-fable-5-1", "claude-opus-4-8", "claude-sonnet-5", "claude-haiku-4-5", "claude-fable-5"]) {
 			assert.match(stdout, new RegExp(`claude-subscription\\s+${id}`), `${id} should be registered`);
 		}
 	});
@@ -76,6 +78,7 @@ describe("extension registration", { timeout: TIMEOUT_MS }, () => {
 	it("registers the 1M context window where the plan allows it", async () => {
 		const { stdout } = await runPi(["--list-models", "claude-subscription"]);
 		assert.match(stdout, /claude-opus-5\s+1M/, "Opus 5 always gets 1M");
+		assert.match(stdout, /claude-fable-5-1\s+1M/, "Fable 5.1 always gets 1M");
 		assert.match(stdout, /claude-opus-4-8\s+1M/, "Opus 4.8 always gets 1M");
 		assert.match(stdout, /claude-haiku-4-5\s+200K/, "Haiku never does");
 	});

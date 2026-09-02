@@ -70,6 +70,7 @@ Use `/model` and pick one of:
 | Model | Context |
 |---|---|
 | `claude-subscription/claude-opus-5` | 1M |
+| `claude-subscription/claude-fable-5-1` | 1M |
 | `claude-subscription/claude-fable-5` | 1M |
 | `claude-subscription/claude-opus-4-8` | 1M |
 | `claude-subscription/claude-opus-4-7` | 1M |
@@ -85,11 +86,12 @@ timeout to match Claude Code, since pi's bash has none.
 Your `AGENTS.md` and pi's skills block are forwarded into Claude Code's system prompt, with
 pi-specific paths rewritten to their Claude Code equivalents.
 
-**1M context.** Opus 5, Opus 4.7 and 4.8, Fable 5 and Sonnet 5 get 1M by default. Opus 4.6
-needs a Max plan or Extra Usage; Sonnet 4.6 needs Extra Usage on any plan. Set `provider.plan` and
-`provider.longContextExtraUsage` accordingly — see [Configuration](#configuration). The
-window registered with pi always matches what the extension actually requests, so pi's
-status bar and auto-compaction threshold stay accurate.
+**1M context.** Opus 5, Opus 4.7 and 4.8, Fable 5.1, Fable 5 and Sonnet 5 get 1M by
+default. Opus 4.6 needs a Max plan or Extra Usage; Sonnet 4.6 needs Extra Usage on any
+plan. Set `provider.plan` and `provider.longContextExtraUsage` accordingly, see
+[Configuration](#configuration). The window registered with pi always matches what the
+extension actually requests, so pi's status bar and auto-compaction threshold stay
+accurate.
 
 ## AskClaudeCode tool
 
@@ -106,7 +108,7 @@ Available whenever the active provider is *not* `claude-subscription`. Examples:
 |---|---|
 | `prompt` | The question or task. Claude sees the full conversation by default — let it explore rather than researching up front. |
 | `mode` | `read` (default), `none`, or `full` (read + write + bash). Disable `full` with `allowFullMode: false`. |
-| `model` | `opus` (default, currently resolves to Opus 5), `sonnet`, `haiku`, or a full model id. |
+| `model` | `opus` (default, currently resolves to Opus 5), `sonnet`, `haiku`, `fable` (resolves to Fable 5.1), or a full model id. |
 | `thinking` | `off`, `minimal`, `low`, `medium`, `high`, `xhigh`. |
 | `isolated` | `true` gives Claude a clean session with no conversation history. Default `false`. |
 
@@ -215,8 +217,19 @@ After a Claude Code release:
   [diag/CONTEXT-SIZE.md](diag/CONTEXT-SIZE.md).
 
 Adding a model means one entry in `MODEL_IDS_IN_ORDER` and one case in
-`resolveClaudeCodeRuntimeModel`, both in `src/models.ts`. Ids that pi-ai doesn't know are
-dropped silently, so a model only appears once pi-ai ships it too.
+`resolveClaudeCodeRuntimeModel`, both in `src/models.ts`.
+
+Ids that neither pi-ai nor `PI_AI_FALLBACK_MODELS` knows are dropped silently. pi-ai
+typically ships a new model id some releases after Claude Code serves it, so a model
+released in between needs a `PI_AI_FALLBACK_MODELS` entry to appear at all. pi-ai's own
+entry wins as soon as it exists, so **delete the fallback entry once pi-ai ships the id**
+rather than leaving two sources of truth for the same model.
+
+A model can also need a newer Claude Code than the pinned
+`@anthropic-ai/claude-agent-sdk` bundles (Fable 5.1 needs v2.1.255+, and SDK `0.3.x`
+bundles Claude Code `2.1.x`). Bump the SDK in the same change, or the id is rejected at
+runtime. This does not apply when `provider.pathToClaudeCodeExecutable` points at your own
+CLI, where that binary's version is what counts.
 
 ## Releasing
 

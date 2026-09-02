@@ -261,7 +261,7 @@ export function registerAskClaudeTool(
 	const parameters = Type.Object({
 		prompt: Type.String({ description: "The question or task for Claude Code. By default Claude sees the full conversation history. Don't research up front, let Claude explore." }),
 		mode: Type.Optional(StringEnum(modeValues, { description: modeDesc })),
-		model: Type.Optional(Type.String({ description: 'Claude model (e.g. "opus", "sonnet", "haiku", or full ID). Defaults to "opus".' })),
+		model: Type.Optional(Type.String({ description: 'Claude model (e.g. "opus", "sonnet", "haiku", "fable", or full ID). Defaults to "opus".' })),
 		thinking: Type.Optional(StringEnum(["off", "minimal", "low", "medium", "high", "xhigh"] as const, { description: "Thinking effort level. Omit to use Claude Code's default." })),
 		isolated: Type.Optional(Type.Boolean({ description: "When true, Claude sees only this prompt (clean session). When false (default), Claude sees the full conversation history." })),
 	});

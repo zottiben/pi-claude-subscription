@@ -4,10 +4,12 @@
 
 import type { Api, Model } from "@earendil-works/pi-ai";
 
-/** Canonical selection + display order for the model picker. `resolveModel` returns the
- *  first partial match, so `"opus"` resolves to the first opus entry listed here. */
+/** Canonical selection + display order for the model picker. Failing an exact id match,
+ *  `resolveModel` returns the first partial match, so `"opus"` resolves to the first opus
+ *  entry listed here and `"fable"` to the first fable entry. */
 export const MODEL_IDS_IN_ORDER = [
 	"claude-opus-5",
+	"claude-fable-5-1",
 	"claude-fable-5",
 	"claude-opus-4-8",
 	"claude-opus-4-7",
@@ -17,6 +19,9 @@ export const MODEL_IDS_IN_ORDER = [
 	"claude-haiku-4-5",
 ] as const;
 
+export const TWO_HUNDRED_K_CONTEXT = 200_000;
+export const ONE_M_CONTEXT = 1_000_000;
+
 // Workaround for missing thinkingLevelMap in pi-ai (earendil-works/pi#6371).
 // Sonnet 5 and Sonnet 4.6 ship no map, so getSupportedThinkingLevels hides xhigh
 // (it's opt-in). Both models' top effort tier is "max" with no distinct xhigh
@@ -24,6 +29,29 @@ export const MODEL_IDS_IN_ORDER = [
 const DEFAULT_THINKING_LEVEL_MAPS: Record<string, Model<Api>["thinkingLevelMap"]> = {
 	"claude-sonnet-5": { xhigh: "max" },
 	"claude-sonnet-4-6": { xhigh: "max" },
+};
+
+/**
+ * Catalogue entries for models Claude Code serves but pi-ai has not shipped yet.
+ *
+ * `buildModels` drops unknown ids, so without this a model released between pi-ai versions
+ * would be invisible here no matter what the rest of this file says. pi-ai's own entry wins
+ * as soon as it exists; delete an entry from this table once it does.
+ *
+ * Fields mirror pi-ai's shape for the previous model in the family, corrected against the
+ * published model specs. Fable 5.1 offers the same effort levels as Fable 5
+ * (low/medium/high/xhigh/max), so it carries the same thinkingLevelMap.
+ */
+const PI_AI_FALLBACK_MODELS: Record<string, SourceModel> = {
+	"claude-fable-5-1": {
+		id: "claude-fable-5-1",
+		name: "Claude Fable 5.1",
+		reasoning: true,
+		input: ["text", "image"],
+		contextWindow: ONE_M_CONTEXT,
+		maxTokens: 128_000,
+		thinkingLevelMap: { off: null, xhigh: "xhigh", max: "max" },
+	},
 };
 
 /** The subset of a pi-ai model entry this module reads, with pi-ai's own field types. */
@@ -40,8 +68,9 @@ export interface BridgedModel extends SourceModel {
 
 /**
  * Project pi-ai's model entries down to the fields pi's registerProvider expects,
- * preserving MODEL_IDS_IN_ORDER ordering. IDs absent from pi-ai are silently dropped
- * so a pi-ai downgrade degrades to a shorter list rather than a crash.
+ * preserving MODEL_IDS_IN_ORDER ordering. IDs absent from both pi-ai and
+ * PI_AI_FALLBACK_MODELS are silently dropped so a pi-ai downgrade degrades to a shorter
+ * list rather than a crash.
  *
  * Cost is zeroed: these models bill against a Claude subscription, not per-token.
  * Context-dependent display labels are applied later by `applyLongContext`, once
@@ -50,7 +79,7 @@ export interface BridgedModel extends SourceModel {
 export function buildModels(piAiModels: readonly SourceModel[]): BridgedModel[] {
 	const bridged: BridgedModel[] = [];
 	for (const id of MODEL_IDS_IN_ORDER) {
-		const model = piAiModels.find((m) => m.id === id);
+		const model = piAiModels.find((m) => m.id === id) ?? PI_AI_FALLBACK_MODELS[id];
 		if (!model) continue;
 		bridged.push({
 			id: model.id,
@@ -78,9 +107,6 @@ export interface ClaudeCodeRuntimeModel {
 	contextWindow: number;
 }
 
-export const TWO_HUNDRED_K_CONTEXT = 200_000;
-export const ONE_M_CONTEXT = 1_000_000;
-
 /**
  * Measured Claude Agent SDK subscription/OAuth behaviour.
  *
@@ -107,6 +133,10 @@ export function resolveClaudeCodeRuntimeModel(modelId: string, settings: LongCon
 				contextWindow: useOneM ? ONE_M_CONTEXT : TWO_HUNDRED_K_CONTEXT,
 			};
 		}
+		// Measured 1M both bare and with [1m], no rejection, same as Opus 5. The suffix is kept
+		// for the same reason: it requests 1M explicitly rather than trusting a default.
+		case "claude-fable-5-1":
+			return { cliModelId: "claude-fable-5-1[1m]", contextWindow: ONE_M_CONTEXT };
 		case "claude-fable-5":
 			return { cliModelId: "claude-fable-5[1m]", contextWindow: ONE_M_CONTEXT };
 		case "claude-sonnet-5":
@@ -128,9 +158,17 @@ export function claudeCodeModelId(model: { id: string }, settings: LongContextSe
 	return resolveClaudeCodeRuntimeModel(model.id, settings).cliModelId;
 }
 
+/**
+ * Resolve a user-supplied model name: an exact id anywhere in the list wins, otherwise the
+ * first partial match in picker order.
+ *
+ * Exact match is checked across the whole list first because ids are not prefix-free:
+ * `claude-fable-5` is a prefix of `claude-fable-5-1`, which sorts earlier, so a positional
+ * check would answer an explicit request for Fable 5 with Fable 5.1.
+ */
 export function resolveModel<T extends { id: string }>(models: readonly T[], input: string): T | undefined {
 	const lower = input.toLowerCase();
-	return models.find((m) => m.id === lower || m.id.includes(lower));
+	return models.find((m) => m.id === lower) ?? models.find((m) => m.id.includes(lower));
 }
 
 /**

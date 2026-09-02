@@ -15,6 +15,7 @@ import {
 	resolveClaudeCodeRuntimeModel,
 	resolveModel,
 	TWO_HUNDRED_K_CONTEXT,
+	type BridgedModel,
 	type LongContextSettings,
 	type SourceModel,
 } from "../../src/models.js";
@@ -35,6 +36,16 @@ function source(id: string, overrides: Partial<SourceModel> = {}): SourceModel {
 	};
 }
 
+// buildModels always contributes the fallback entries for models pi-ai hasn't shipped, so a
+// test that examines one model looks it up by id rather than trusting its position.
+function buildOne(id: string, overrides: Partial<SourceModel> = {}): BridgedModel | undefined {
+	return buildModels([source(id, overrides)]).find((m) => m.id === id);
+}
+
+function longContextOne(id: string, settings: LongContextSettings, overrides: Partial<SourceModel> = {}) {
+	return applyLongContext(buildModels([source(id, overrides)]), settings).find((m) => m.id === id);
+}
+
 describe("buildModels", () => {
 	it("preserves MODEL_IDS_IN_ORDER regardless of input order", () => {
 		const shuffled = [...MODEL_IDS_IN_ORDER].reverse().map((id) => source(id));
@@ -43,23 +54,37 @@ describe("buildModels", () => {
 
 	it("drops ids pi-ai doesn't know, instead of failing", () => {
 		const built = buildModels([source("claude-opus-4-8"), source("some-future-model")]);
-		assert.deepEqual(built.map((m) => m.id), ["claude-opus-4-8"]);
+		assert.ok(!built.some((m) => m.id === "some-future-model"), "an id outside the catalogue is dropped");
+		assert.ok(built.some((m) => m.id === "claude-opus-4-8"), "a known id survives");
+	});
+
+	// pi-ai has no claude-fable-5-1 entry yet, so without the fallback table Fable 5.1 would
+	// be dropped by the rule above and never reach the picker.
+	it("falls back to a local entry for a model pi-ai hasn't shipped", () => {
+		const built = buildModels([source("claude-opus-4-8")]);
+		const fable = built.find((m) => m.id === "claude-fable-5-1");
+		assert.ok(fable, "Fable 5.1 should be registered without a pi-ai entry");
+		assert.equal(fable.name, "Claude Fable 5.1");
+		assert.equal(fable.contextWindow, ONE_M_CONTEXT);
+		assert.equal(fable.thinkingLevelMap?.xhigh, "xhigh");
+	});
+
+	it("prefers pi-ai's entry over the fallback once pi-ai ships the id", () => {
+		const built = buildModels([source("claude-fable-5-1", { name: "From pi-ai" })]);
+		assert.equal(built.find((m) => m.id === "claude-fable-5-1")?.name, "From pi-ai");
 	});
 
 	it("zeroes cost, since these bill against a subscription", () => {
-		const built = buildModels([source("claude-opus-4-8")]);
-		assert.deepEqual(built[0]?.cost, { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 });
+		assert.deepEqual(buildOne("claude-opus-4-8")?.cost, { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 });
 	});
 
 	it("supplies a fallback thinkingLevelMap for Sonnet, which pi-ai omits", () => {
-		const built = buildModels([source("claude-sonnet-5"), source("claude-sonnet-4-6")]);
-		assert.equal(built[0]?.thinkingLevelMap?.xhigh, "max");
-		assert.equal(built[1]?.thinkingLevelMap?.xhigh, "max");
+		assert.equal(buildOne("claude-sonnet-5")?.thinkingLevelMap?.xhigh, "max");
+		assert.equal(buildOne("claude-sonnet-4-6")?.thinkingLevelMap?.xhigh, "max");
 	});
 
 	it("prefers pi-ai's own map over the fallback", () => {
-		const built = buildModels([source("claude-sonnet-5", { thinkingLevelMap: { xhigh: "xhigh" } })]);
-		assert.equal(built[0]?.thinkingLevelMap?.xhigh, "xhigh");
+		assert.equal(buildOne("claude-sonnet-5", { thinkingLevelMap: { xhigh: "xhigh" } })?.thinkingLevelMap?.xhigh, "xhigh");
 	});
 });
 
@@ -68,6 +93,14 @@ describe("resolveClaudeCodeRuntimeModel", () => {
 		for (const settings of [PRO, MAX, PRO_EXTRA]) {
 			assert.deepEqual(resolveClaudeCodeRuntimeModel("claude-opus-5", settings), {
 				cliModelId: "claude-opus-5[1m]", contextWindow: ONE_M_CONTEXT,
+			});
+		}
+	});
+
+	it("gives Fable 5.1 1M on every plan, with no gating", () => {
+		for (const settings of [PRO, MAX, PRO_EXTRA]) {
+			assert.deepEqual(resolveClaudeCodeRuntimeModel("claude-fable-5-1", settings), {
+				cliModelId: "claude-fable-5-1[1m]", contextWindow: ONE_M_CONTEXT,
 			});
 		}
 	});
@@ -123,25 +156,23 @@ describe("claudeCodeModelId", () => {
 
 describe("applyLongContext", () => {
 	it("aligns the registered window with what the extension will actually request", () => {
-		const models = buildModels([source("claude-opus-4-6")]);
-		assert.equal(applyLongContext(models, MAX)[0]?.contextWindow, ONE_M_CONTEXT);
-		assert.equal(applyLongContext(models, PRO)[0]?.contextWindow, TWO_HUNDRED_K_CONTEXT);
+		assert.equal(longContextOne("claude-opus-4-6", MAX)?.contextWindow, ONE_M_CONTEXT);
+		assert.equal(longContextOne("claude-opus-4-6", PRO)?.contextWindow, TWO_HUNDRED_K_CONTEXT);
 	});
 
 	it("appends a 1M label so the picker shows what you get", () => {
-		const models = buildModels([source("claude-opus-4-6", { name: "Claude Opus 4.6" })]);
-		assert.equal(applyLongContext(models, MAX)[0]?.name, "Claude Opus 4.6 1M");
-		assert.equal(applyLongContext(models, PRO)[0]?.name, "Claude Opus 4.6");
+		assert.equal(longContextOne("claude-opus-4-6", MAX, { name: "Claude Opus 4.6" })?.name, "Claude Opus 4.6 1M");
+		assert.equal(longContextOne("claude-opus-4-6", PRO, { name: "Claude Opus 4.6" })?.name, "Claude Opus 4.6");
 	});
 
 	it("does not double up a 1M label the name already carries", () => {
-		const models = buildModels([source("claude-opus-4-8", { name: "Claude Opus 4.8 1M" })]);
-		assert.equal(applyLongContext(models, PRO)[0]?.name, "Claude Opus 4.8 1M");
+		assert.equal(longContextOne("claude-opus-4-8", PRO, { name: "Claude Opus 4.8 1M" })?.name, "Claude Opus 4.8 1M");
 	});
 
 	it("returns the identical object when nothing changed", () => {
 		const models = buildModels([source("claude-haiku-4-5")]);
-		assert.equal(applyLongContext(models, PRO)[0], models[0]);
+		const haiku = models.find((m) => m.id === "claude-haiku-4-5");
+		assert.equal(applyLongContext(models, PRO).find((m) => m.id === "claude-haiku-4-5"), haiku);
 	});
 });
 
@@ -157,6 +188,18 @@ describe("resolveModel", () => {
 	it("still resolves an explicit older id", () => {
 		assert.equal(resolveModel(models, "claude-opus-4-8")?.id, "claude-opus-4-8");
 		assert.equal(resolveModel(models, "opus-4-7")?.id, "claude-opus-4-7");
+	});
+
+	// "fable" follows Claude Code's own alias, which resolves to the newest Fable.
+	it("resolves the fable family to Fable 5.1", () => {
+		assert.equal(resolveModel(models, "fable")?.id, "claude-fable-5-1");
+	});
+
+	// claude-fable-5 is a prefix of claude-fable-5-1, which sorts earlier, so a purely
+	// positional match would hand back 5.1 for an explicit 5.
+	it("prefers an exact id over an earlier entry it is a prefix of", () => {
+		assert.equal(resolveModel(models, "claude-fable-5")?.id, "claude-fable-5");
+		assert.equal(resolveModel(models, "claude-fable-5-1")?.id, "claude-fable-5-1");
 	});
 
 	it("matches an exact id case-insensitively", () => {
