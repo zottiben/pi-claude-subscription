@@ -21,6 +21,10 @@ import {
 
 const SESSION_ID = "11111111-1111-4111-8111-111111111111";
 
+function system(content = ""): Message {
+	return { role: "system", content, timestamp: 0 } as unknown as Message;
+}
+
 function user(text: string): Message {
 	return { role: "user", content: text, timestamp: 0 };
 }
@@ -70,6 +74,11 @@ afterEach(() => clearSharedSession());
 describe("syncSharedSession clean start", () => {
 	it("starts clean on the very first prompt", () => withCwd((cwd) => {
 		assert.deepEqual(syncSharedSession([user("hi")], cwd), { sessionId: null });
+		assert.equal(getSharedSession(), null);
+	}));
+
+	it("starts clean when the first prompt is preceded only by Pi's initial system message", () => withCwd((cwd) => {
+		assert.deepEqual(syncSharedSession([system(), user("hi")], cwd), { sessionId: null });
 		assert.equal(getSharedSession(), null);
 	}));
 });

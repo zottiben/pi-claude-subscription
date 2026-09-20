@@ -190,7 +190,12 @@ export function syncSharedSession(
 	}
 
 	// --- REBUILD ---
-	if (priorMessages.length === 0) {
+	// Pi 0.86+ prepends an initial system message to the transcript. System messages are
+	// carried separately through context.systemPrompt and convertPiMessages intentionally
+	// does not import them. If they are the only prior messages, Session.save() would have
+	// zero records and create no JSONL file, then Claude Code would be asked to resume that
+	// nonexistent session id.
+	if (priorMessages.every((message) => (message as { role: string }).role === "system")) {
 		debug(`Case 1: clean start, ${messages.length} total messages`);
 		debug("syncResult: path=clean-start");
 		return { sessionId: null };
