@@ -13,7 +13,7 @@
 // leftovers hit the `!currentPiStream` guard and are skipped before the reset lands.
 
 import type { Query, SDKMessage } from "@anthropic-ai/claude-agent-sdk";
-import { calculateCost, type AssistantMessageEventStream, type StopReason } from "@earendil-works/pi-ai";
+import { calculateCost, type AssistantMessageEventStream, type JsonObject, type StopReason } from "@earendil-works/pi-ai";
 import { debug } from "./debug.js";
 import type { QueryContext, StreamingBlock } from "./query-state.js";
 import { notify } from "./runtime.js";
@@ -127,11 +127,11 @@ function mapStopReason(reason: string | null | undefined): "stop" | "length" | "
 	}
 }
 
-function parsePartialJson(input: string, fallback: Record<string, unknown>): Record<string, unknown> {
+function parsePartialJson(input: string, fallback: JsonObject): JsonObject {
 	if (!input) return fallback;
 	try {
 		const parsed: unknown = JSON.parse(input);
-		return typeof parsed === "object" && parsed !== null ? parsed as Record<string, unknown> : fallback;
+		return typeof parsed === "object" && parsed !== null && !Array.isArray(parsed) ? parsed as JsonObject : fallback;
 	} catch {
 		return fallback;
 	}
@@ -187,7 +187,7 @@ export function processStreamEvent(
 					type: "toolCall",
 					id: block.id,
 					name: mapToolName(block.name, customToolNameToPi),
-					arguments: (block.input as Record<string, unknown>) ?? {},
+					arguments: (block.input as JsonObject) ?? {},
 					partialJson: "",
 					index: event.index,
 				});
@@ -316,7 +316,7 @@ export function processAssistantMessage(
 				type: "toolCall",
 				id: block.id,
 				name,
-				arguments: mapToolArgs(name, block.input as Record<string, unknown>),
+				arguments: mapToolArgs(name, block.input as JsonObject),
 			});
 			const idx = c.turnBlocks.length - 1;
 			const toolBlock = c.turnBlocks[idx];

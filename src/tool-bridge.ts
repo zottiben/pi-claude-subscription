@@ -6,7 +6,7 @@
 // keeps tool execution, permissions, and rendering inside pi's TUI.
 
 import { createSdkMcpServer } from "@anthropic-ai/claude-agent-sdk";
-import type { Context, Tool } from "@earendil-works/pi-ai";
+import { getCurrentTools, type JsonObject, type Tool, type TranscriptContext } from "@earendil-works/pi-ai";
 import { debug } from "./debug.js";
 import type { McpResult } from "./extract-tool-results.js";
 import type { QueryContext } from "./query-state.js";
@@ -55,11 +55,11 @@ export function mapToolName(name: string, customToolNameToPi?: Map<string, strin
  */
 export function mapToolArgs(
 	toolName: string,
-	args: Record<string, unknown> | undefined,
-): Record<string, unknown> {
+	args: JsonObject | undefined,
+): JsonObject {
 	const input = args ?? {};
 	const renames = SDK_KEY_RENAMES[toolName.toLowerCase()];
-	const result: Record<string, unknown> = {};
+	const result: JsonObject = {};
 	for (const [key, value] of Object.entries(input)) {
 		const piKey = renames?.[key] ?? key;
 		if (!(piKey in result)) result[piKey] = value; // first alias wins
@@ -78,14 +78,12 @@ export interface ResolvedMcpTools {
 	customToolNameToPi: Map<string, string>;
 }
 
-export function resolveMcpTools(context: Context, excludeToolName?: string): ResolvedMcpTools {
+export function resolveMcpTools(context: TranscriptContext, excludeToolName?: string): ResolvedMcpTools {
 	const mcpTools: Tool[] = [];
 	const customToolNameToSdk = new Map<string, string>();
 	const customToolNameToPi = new Map<string, string>();
 
-	if (!context.tools) return { mcpTools, customToolNameToSdk, customToolNameToPi };
-
-	for (const tool of context.tools) {
+	for (const tool of getCurrentTools(context.messages)) {
 		if (tool.name === excludeToolName) continue;
 		const sdkName = `${MCP_TOOL_PREFIX}${tool.name}`;
 		mcpTools.push(tool);

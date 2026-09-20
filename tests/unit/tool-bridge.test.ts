@@ -7,9 +7,10 @@
 
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
+import type { Tool, TranscriptContext } from "@earendil-works/pi-ai";
 import type { McpResult } from "../../src/extract-tool-results.js";
 import { QueryContext } from "../../src/query-state.js";
-import { mapToolArgs, mapToolName } from "../../src/tool-bridge.js";
+import { mapToolArgs, mapToolName, resolveMcpTools } from "../../src/tool-bridge.js";
 import { MCP_TOOL_PREFIX } from "../../src/skills.js";
 
 describe("mapToolName", () => {
@@ -29,6 +30,27 @@ describe("mapToolName", () => {
 
 	it("passes unknown names through untouched", () => {
 		assert.equal(mapToolName("WebSearch"), "WebSearch");
+	});
+});
+
+describe("resolveMcpTools", () => {
+	it("reads tools from Pi 0.86 transcript system messages", () => {
+		const tool = {
+			name: "read",
+			description: "Read a file",
+			parameters: { type: "object", properties: {} },
+		} as Tool;
+		const context = {
+			messages: [
+				{ role: "system", content: "system prompt", toolsAdded: [tool], timestamp: 0 },
+				{ role: "user", content: "hello", timestamp: 1 },
+			],
+		} as unknown as TranscriptContext;
+
+		const resolved = resolveMcpTools(context);
+
+		assert.deepEqual(resolved.mcpTools, [tool]);
+		assert.equal(resolved.customToolNameToSdk.get("read"), `${MCP_TOOL_PREFIX}read`);
 	});
 });
 

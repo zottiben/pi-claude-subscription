@@ -21,11 +21,12 @@ import {
 import type { Base64ImageSource, ContentBlockParam, MessageParam } from "@anthropic-ai/sdk/resources";
 import {
 	createAssistantMessageEventStream,
+	getCurrentSystemPrompt,
 	type AssistantMessage,
 	type AssistantMessageEventStream,
-	type Context,
 	type SimpleStreamOptions,
 	type StopReason,
+	type TranscriptContext,
 } from "@earendil-works/pi-ai";
 import type { CompactionEntry } from "@earendil-works/pi-coding-agent";
 import { debug, diagDump, errorMessage, makeCliDebugOptions } from "./debug.js";
@@ -97,7 +98,7 @@ function newAssistantOutput(
 }
 
 /** Thin wrapper over the pure extractor, adding per-turn logging at the boundary. */
-function extractAllToolResults(context: Context): McpResult[] {
+function extractAllToolResults(context: TranscriptContext): McpResult[] {
 	const { results, stopIdx } = extractAllToolResultsPure(context.messages);
 	debug(`extractAllToolResults: ${results.length} results from ${context.messages.length} msgs, stopped at index ${stopIdx}`);
 	debug("extractAllToolResults: all msg roles:", context.messages.map((m, i) => `[${i}]${m.role}`).join(" "));
@@ -108,7 +109,7 @@ function extractAllToolResults(context: Context): McpResult[] {
 }
 
 /** Last user message as plain text, or null when the last message isn't from the user. */
-function extractUserPrompt(messages: Context["messages"]): string | null {
+function extractUserPrompt(messages: TranscriptContext["messages"]): string | null {
 	const last = messages[messages.length - 1];
 	if (!last || last.role !== "user") return null;
 	if (typeof last.content === "string") return last.content;
@@ -120,7 +121,7 @@ function extractUserPrompt(messages: Context["messages"]): string | null {
  * Returns null when there are no images — callers fall back to the plain string prompt,
  * which keeps the common path on the cheaper string form.
  */
-function extractUserPromptBlocks(messages: Context["messages"]): ContentBlockParam[] | null {
+function extractUserPromptBlocks(messages: TranscriptContext["messages"]): ContentBlockParam[] | null {
 	const last = messages[messages.length - 1];
 	if (!last || last.role !== "user") return null;
 	if (typeof last.content === "string") {
@@ -200,7 +201,7 @@ function contextForToolResults(results: readonly McpResult[]): QueryContext | un
 // models can't be driven that way, so the extension takes the summarisation over with a
 // one-shot, tool-less, non-persisted query.
 
-function extractIsolatedSummaryPrompt(messages: Context["messages"]): string {
+function extractIsolatedSummaryPrompt(messages: TranscriptContext["messages"]): string {
 	if (messages.length !== 1 || messages[0]?.role !== "user") {
 		throw new Error(
 			`isolatedStreamFn: expected exactly 1 user message, got ${messages.length} ` +
@@ -221,7 +222,7 @@ function resultErrorText(message: Extract<SDKMessage, { type: "result" }>): stri
 
 export function isolatedStreamFn(
 	model: BridgeModel,
-	context: Context,
+	context: TranscriptContext,
 	options?: SimpleStreamOptions,
 ): AssistantMessageEventStream {
 	const stream = createAssistantMessageEventStream();
@@ -231,7 +232,7 @@ export function isolatedStreamFn(
 
 async function runIsolatedSummary(
 	model: BridgeModel,
-	context: Context,
+	context: TranscriptContext,
 	options: SimpleStreamOptions | undefined,
 	stream: AssistantMessageEventStream,
 ): Promise<void> {
@@ -260,7 +261,7 @@ async function runIsolatedSummary(
 				settingSources: [] as SettingSource[],
 				skills: [],
 				persistSession: false,
-				systemPrompt: context.systemPrompt,
+				systemPrompt: getCurrentSystemPrompt(context.messages) || undefined,
 				model: cliModel,
 				maxTurns: 1,
 				...(claudeExecutable ? { pathToClaudeCodeExecutable: claudeExecutable } : {}),
@@ -349,7 +350,7 @@ export function reinjectPriorCompactionFileOps(
 
 export function streamClaudeAgentSdk(
 	model: BridgeModel,
-	context: Context,
+	context: TranscriptContext,
 	options?: SimpleStreamOptions,
 ): AssistantMessageEventStream {
 	const stream = createAssistantMessageEventStream();
@@ -393,7 +394,7 @@ export function streamClaudeAgentSdk(
 function deliverToolResults(
 	stream: AssistantMessageEventStream,
 	model: BridgeModel,
-	context: Context,
+	context: TranscriptContext,
 	allResults: McpResult[],
 	resultCtx: QueryContext,
 	lastMsgRole: string | undefined,
@@ -447,7 +448,7 @@ function deliverToolResults(
 function startFreshQuery(
 	stream: AssistantMessageEventStream,
 	model: BridgeModel,
-	context: Context,
+	context: TranscriptContext,
 	options: SimpleStreamOptions | undefined,
 	isReentrant: boolean,
 ): void {
@@ -494,7 +495,7 @@ function startFreshQuery(
 
 	const appendSystemPrompt = providerSettings.appendSystemPrompt !== false;
 	const appendParts = appendSystemPrompt
-		? [extractAgentsAppend(cwd), extractSkillsBlock(context.systemPrompt)].filter((p): p is string => Boolean(p))
+		? [extractAgentsAppend(cwd), extractSkillsBlock(getCurrentSystemPrompt(context.messages))].filter((p): p is string => Boolean(p))
 		: [];
 	const systemPromptAppend = appendParts.length > 0 ? appendParts.join("\n\n") : undefined;
 
