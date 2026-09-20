@@ -1,9 +1,9 @@
 name: Release
 
-# Tag-driven. `git tag v0.2.0 && git push origin v0.2.0` cuts a release.
+# Tag-driven. `git tag v0.2.1 && git push origin v0.2.1` cuts a release.
 #
 # Publishing to npm is OFF by default: the GitHub Release alone is enough to install with
-#   pi install git:github.com/zottiben/pi-claude-subscription@v0.2.0
+#   pi install git:github.com/zottiben/pi-claude-subscription@v0.2.1
 # To turn npm publishing on, see the `publish-npm` job at the bottom.
 on:
   push:
