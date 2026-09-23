@@ -23,7 +23,7 @@ TypeScript throughout, `strict` mode, no build step — pi loads the `.ts` sourc
 From GitHub (no npm account needed):
 
 ```
-pi install git:github.com/zottiben/pi-claude-subscription@v0.3.1
+pi install git:github.com/zottiben/pi-claude-subscription@v0.3.2
 ```
 
 Or from a local checkout, which is also the best way to develop — the path is referenced
@@ -91,8 +91,9 @@ pi-specific paths rewritten to their Claude Code equivalents.
 default. Opus 4.6 needs a Max plan or Extra Usage; Sonnet 4.6 needs Extra Usage on any
 plan. Set `provider.plan` and `provider.longContextExtraUsage` accordingly, see
 [Configuration](#configuration). The window registered with pi always matches what the
-extension actually requests, so pi's status bar and auto-compaction threshold stay
-accurate.
+extension actually requests. The provider signals auto-compaction before Claude Code's
+served output headroom is exhausted (up to 128K for Opus 5.5), rather than waiting for the
+last 16K of the advertised window.
 
 ## AskClaudeCode tool
 
