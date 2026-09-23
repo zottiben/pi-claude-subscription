@@ -41,6 +41,11 @@ export class QueryContext {
 	// --- Query-scoped: fully isolated per query ---
 
 	activeQuery: Query | null = null;
+	/** Abort callback and completion barrier used to rotate a live query before compaction. */
+	abortActiveQuery: (() => void) | null = null;
+	activeQueryCompletion: Promise<void> | null = null;
+	/** The next provider call must rebuild and continue instead of treating its tool result as orphaned. */
+	resumeAfterCompaction = false;
 	currentPiStream: AssistantMessageEventStream | null = null;
 	/** Highest pi context length observed for this query; used to advance the session cursor. */
 	latestCursor = 0;
@@ -95,7 +100,8 @@ export function ctx(): QueryContext {
 	return current;
 }
 
-/** Test-only: drop all state so a test file can start from a clean module. */
-export function resetContext(): void {
+/** Drop all top-level query state and return the replacement context. */
+export function resetContext(): QueryContext {
 	current = new QueryContext();
+	return current;
 }

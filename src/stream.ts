@@ -15,6 +15,7 @@
 import type { Query, SDKMessage } from "@anthropic-ai/claude-agent-sdk";
 import { calculateCost, type AssistantMessageEventStream, type JsonObject, type StopReason } from "@earendil-works/pi-ai";
 import { debug } from "./debug.js";
+import { claudeCodeMaxOutputTokens } from "./models.js";
 import type { QueryContext, StreamingBlock } from "./query-state.js";
 import { notify } from "./runtime.js";
 import { mapToolArgs, mapToolName } from "./tool-bridge.js";
@@ -81,6 +82,20 @@ interface RawUsage {
 	thinking_tokens?: number | null;
 }
 
+const PI_DEFAULT_COMPACTION_RESERVE = 16_384;
+
+/**
+ * Preserve exact usage until Claude Code no longer has room for its configured maximum
+ * output. At that boundary, report enough pressure to cross Pi's default compaction
+ * threshold. Claude Code owns max-output selection and can reject the next internal tool
+ * turn even though Pi's much smaller fixed reserve says the transcript still fits.
+ */
+function contextTokensForPi(actualTokens: number, model: BridgeModel): number {
+	const outputHeadroom = claudeCodeMaxOutputTokens(model);
+	if (actualTokens < model.contextWindow - outputHeadroom) return actualTokens;
+	return Math.max(actualTokens, model.contextWindow - PI_DEFAULT_COMPACTION_RESERVE + 1);
+}
+
 export function updateUsage(
 	output: { usage: NonNullable<QueryContext["turnOutput"]>["usage"] },
 	usage: RawUsage,
@@ -94,12 +109,14 @@ export function updateUsage(
 	const reasoning = usage.reasoning_tokens ?? usage.thinking_tokens;
 	if (reasoning != null) output.usage.reasoning = reasoning;
 
-	output.usage.totalTokens = output.usage.input + output.usage.output + output.usage.cacheRead + output.usage.cacheWrite;
+	const actualTokens = output.usage.input + output.usage.output + output.usage.cacheRead + output.usage.cacheWrite;
+	output.usage.totalTokens = contextTokensForPi(actualTokens, model);
 	calculateCost(model, output.usage);
 
 	const promptTokens = output.usage.input + output.usage.cacheRead + output.usage.cacheWrite;
 	const cachePct = promptTokens > 0 ? Math.round(output.usage.cacheRead / promptTokens * 100) : 0;
-	debug(`usage: in=${output.usage.input} out=${output.usage.output} cacheRead=${output.usage.cacheRead} cacheWrite=${output.usage.cacheWrite} total=${output.usage.totalTokens}${reasoning != null ? ` reasoning=${reasoning}` : ""} cachePct=${cachePct}% model=${model.id}`);
+	const pressure = output.usage.totalTokens === actualTokens ? "" : ` actual=${actualTokens}`;
+	debug(`usage: in=${output.usage.input} out=${output.usage.output} cacheRead=${output.usage.cacheRead} cacheWrite=${output.usage.cacheWrite} total=${output.usage.totalTokens}${pressure}${reasoning != null ? ` reasoning=${reasoning}` : ""} cachePct=${cachePct}% model=${model.id}`);
 }
 
 /**

@@ -13,7 +13,10 @@
 // one trivial turn with no tools and no persisted session.
 
 import { query, type SettingSource } from "@anthropic-ai/claude-agent-sdk";
+import { loadConfig } from "../src/config.js";
 import { MODEL_IDS_IN_ORDER } from "../src/models.js";
+
+const claudeExecutable = loadConfig(process.cwd()).provider?.pathToClaudeCodeExecutable;
 
 interface Probe {
 	requested: string;
@@ -37,6 +40,7 @@ async function probe(modelId: string): Promise<Probe> {
 				skills: [],
 				persistSession: false,
 				maxTurns: 1,
+				...(claudeExecutable ? { pathToClaudeCodeExecutable: claudeExecutable } : {}),
 				extraArgs: { model: modelId, "strict-mcp-config": null },
 			},
 		});

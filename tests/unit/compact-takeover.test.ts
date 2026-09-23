@@ -10,7 +10,12 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { Message } from "@earendil-works/pi-ai";
 import { normalizeContext } from "@earendil-works/pi-ai";
-import { extractIsolatedSummaryPrompt } from "../../src/provider.js";
+import {
+	consumeCompactionContinuation,
+	extractIsolatedSummaryPrompt,
+	prepareForCompactionContinuation,
+} from "../../src/provider.js";
+import { ctx, resetContext } from "../../src/query-state.js";
 
 const SUMMARY_SYSTEM_PROMPT = "You are a context summarization assistant.";
 
@@ -21,6 +26,33 @@ function summarizationMessages(promptText: string): Message[] {
 		messages: [{ role: "user", content: [{ type: "text", text: promptText }], timestamp: 0 }],
 	}).messages;
 }
+
+describe("compaction continuation", () => {
+	it("turns an overflow retry into exactly one fresh continuation", async () => {
+		resetContext();
+		await prepareForCompactionContinuation(true);
+
+		assert.equal(consumeCompactionContinuation(), true);
+		assert.equal(consumeCompactionContinuation(), false);
+	});
+
+	it("aborts an active query before continuing from a threshold compaction", async () => {
+		resetContext();
+		const queryCtx = ctx();
+		let aborted = false;
+		queryCtx.activeQuery = {} as never;
+		queryCtx.abortActiveQuery = () => {
+			aborted = true;
+			queryCtx.activeQuery = null;
+		};
+		queryCtx.activeQueryCompletion = Promise.resolve();
+
+		await prepareForCompactionContinuation(false);
+
+		assert.equal(aborted, true);
+		assert.equal(consumeCompactionContinuation(), true);
+	});
+});
 
 describe("extractIsolatedSummaryPrompt", () => {
 	it("reads the prompt past the normalized leading system message", () => {

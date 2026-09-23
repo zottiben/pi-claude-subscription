@@ -34,7 +34,7 @@ import { debug, diagDump, errorMessage, makeCliDebugOptions } from "./debug.js";
 import { extractAgentsAppend } from "./agents-md.js";
 import { extractAllToolResults as extractAllToolResultsPure, type McpResult } from "./extract-tool-results.js";
 import { claudeCodeModelId } from "./models.js";
-import { ctx, QueryContext } from "./query-state.js";
+import { ctx, QueryContext, resetContext } from "./query-state.js";
 import { getLongContextSettings, getProviderSettings, notify } from "./runtime.js";
 import {
 	discardEphemeralSession,
@@ -72,6 +72,41 @@ let askClaudeToolName = "";
 
 export function setAskClaudeToolName(name: string): void {
 	askClaudeToolName = name;
+}
+
+/**
+ * Rotate the top-level Claude Code query before Pi installs a compaction boundary.
+ *
+ * A query spans Pi's tool-result turns, so compacting only Pi's transcript leaves the
+ * subprocess on the old, oversized history. Waiting for the old consumer to settle keeps
+ * it from racing the replacement query's stream or shared-session state. Reentrant
+ * subagent contexts are independent and must not be cancelled with the parent.
+ */
+export async function prepareForCompactionContinuation(willRetry: boolean): Promise<void> {
+	const topLevel = ctx();
+	let interrupted = false;
+	if (topLevel.activeQuery) {
+		interrupted = true;
+		if (topLevel.abortActiveQuery) topLevel.abortActiveQuery();
+		else {
+			try { topLevel.activeQuery.close(); } catch { /* already closed */ }
+			topLevel.activeQuery = null;
+		}
+		if (topLevel.activeQueryCompletion) await Promise.allSettled([topLevel.activeQueryCompletion]);
+	}
+
+	if (!willRetry && !interrupted) return;
+	const replacement = resetContext();
+	replacement.resumeAfterCompaction = true;
+	debug(`compaction continuation prepared: willRetry=${willRetry} interrupted=${interrupted}`);
+}
+
+/** Consume the one-shot continuation marker installed around compaction. */
+export function consumeCompactionContinuation(): boolean {
+	const queryCtx = ctx();
+	if (!queryCtx.resumeAfterCompaction) return false;
+	queryCtx.resumeAfterCompaction = false;
+	return true;
 }
 
 // --- Small helpers ---
@@ -364,6 +399,16 @@ export function streamClaudeAgentSdk(
 	const hasActiveQuery = ctx().activeQuery !== null;
 	debug(`provider: streamClaudeAgentSdk called, activeQuery=${hasActiveQuery}, lastMsgRole=${lastMsgRole}`);
 
+	// Overflow recovery and mid-query threshold compaction retain a trailing tool result.
+	// The old Claude Code query was deliberately rotated, so rebuild from Pi's compacted
+	// transcript and continue instead of classifying that result as orphaned.
+	if (consumeCompactionContinuation()) {
+		const includeTrailingToolResult = lastMsgRole === "toolResult";
+		debug(`provider: rebuilding fresh continuation after compaction, includeTrailingToolResult=${includeTrailingToolResult}`);
+		startFreshQuery(stream, model, context, options, false, includeTrailingToolResult);
+		return stream;
+	}
+
 	const allResults = activeQueryContexts.size > 0 ? extractAllToolResults(context) : [];
 	const resultCtx = allResults.length > 0 ? contextForToolResults(allResults) : undefined;
 
@@ -456,6 +501,7 @@ function startFreshQuery(
 	context: TranscriptContext,
 	options: SimpleStreamOptions | undefined,
 	isReentrant: boolean,
+	includeTrailingToolResult = false,
 ): void {
 	// Reentrant queries get their own QueryContext so a background subagent can run
 	// concurrently with the parent without their tool handlers colliding.
@@ -472,14 +518,20 @@ function startFreshQuery(
 	const providerSettings = getProviderSettings();
 	const { mcpTools, customToolNameToSdk, customToolNameToPi } = resolveMcpTools(context, askClaudeToolName);
 	const cwd = process.cwd();
-	const syncResult = syncSharedSession(context.messages, cwd, customToolNameToSdk, model.id);
+	const syncResult = syncSharedSession(
+		context.messages,
+		cwd,
+		customToolNameToSdk,
+		model.id,
+		{ includeLastMessage: includeTrailingToolResult },
+	);
 	const resumeSessionId = syncResult.sessionId;
-	const promptBlocks = extractUserPromptBlocks(context.messages);
-	let promptText = extractUserPrompt(context.messages) ?? "";
+	const promptBlocks = includeTrailingToolResult ? null : extractUserPromptBlocks(context.messages);
+	let promptText = includeTrailingToolResult ? "[continue]" : extractUserPrompt(context.messages) ?? "";
 
 	// An empty prompt means the last context message isn't a user message, which should be
-	// unreachable with per-query state. Dump diagnostics, then recover with a continuation
-	// marker so the SDK doesn't receive an empty text block.
+	// unreachable outside an intentional post-compaction continuation. Dump diagnostics,
+	// then recover with a marker so the SDK doesn't receive an empty text block.
 	if (!promptText && !promptBlocks) {
 		diagDump("empty_prompt", {
 			contextLength: context.messages.length,
@@ -567,6 +619,7 @@ function startFreshQuery(
 	activeQueryContexts.add(queryCtx);
 
 	const onAbort = () => {
+		if (wasAborted) return;
 		wasAborted = true;
 		// Stale deferred messages must not be replayed after an abort.
 		queryCtx.deferredUserMessages = [];
@@ -580,12 +633,13 @@ function startFreshQuery(
 		void sdkQuery.interrupt().catch(() => {});
 		try { sdkQuery.close(); } catch { /* already closed */ }
 	};
+	queryCtx.abortActiveQuery = onAbort;
 	if (options?.signal) {
 		if (options.signal.aborted) onAbort();
 		else options.signal.addEventListener("abort", onAbort, { once: true });
 	}
 
-	consumeQuery(sdkQuery, customToolNameToPi, model, () => wasAborted, queryCtx)
+	const completion = consumeQuery(sdkQuery, customToolNameToPi, model, () => wasAborted, queryCtx)
 		.then(async ({ capturedSessionId }) => {
 			debug(`provider: consumeQuery completed, stopReason=${queryCtx.turnOutput?.stopReason}, error=${queryCtx.turnOutput?.errorMessage}, aborted=${wasAborted}`);
 
@@ -636,7 +690,7 @@ function startFreshQuery(
 				debug("provider: clearing activeQuery before error stream completion");
 				queryCtx.activeQuery = null;
 			}
-			const reason = options?.signal?.aborted ? "aborted" : "error";
+			const reason = wasAborted || options?.signal?.aborted ? "aborted" : "error";
 			terminateStreamWithError(queryCtx, model, reason, errorMessage(error));
 		})
 		.finally(() => {
@@ -650,8 +704,11 @@ function startFreshQuery(
 				queryCtx.activeQuery = null;
 			}
 			activeQueryContexts.delete(queryCtx);
+			queryCtx.abortActiveQuery = null;
+			queryCtx.activeQueryCompletion = null;
 			sdkQuery.close();
 		});
+	queryCtx.activeQueryCompletion = completion;
 }
 
 /**

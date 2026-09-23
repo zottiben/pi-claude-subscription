@@ -9,6 +9,7 @@ import { describe, it } from "node:test";
 import {
 	applyLongContext,
 	buildModels,
+	claudeCodeMaxOutputTokens,
 	claudeCodeModelId,
 	MODEL_IDS_IN_ORDER,
 	ONE_M_CONTEXT,
@@ -95,6 +96,22 @@ describe("buildModels", () => {
 
 	it("prefers pi-ai's own map over the fallback", () => {
 		assert.equal(buildOne("claude-sonnet-5", { thinkingLevelMap: { xhigh: "xhigh" } })?.thinkingLevelMap?.xhigh, "xhigh");
+	});
+});
+
+describe("claudeCodeMaxOutputTokens", () => {
+	it("uses the 128K output budget measured for Opus 5.5", () => {
+		assert.equal(claudeCodeMaxOutputTokens(source("claude-opus-5-5", { maxTokens: 128_000 })), 128_000);
+	});
+
+	it("uses the smaller served budget for 200K Sonnet and Haiku", () => {
+		assert.equal(claudeCodeMaxOutputTokens(source("claude-sonnet-4-6")), 32_000);
+		assert.equal(claudeCodeMaxOutputTokens(source("claude-haiku-4-5")), 32_000);
+	});
+
+	it("caps other and unknown models at the measured 64K default", () => {
+		assert.equal(claudeCodeMaxOutputTokens(source("claude-opus-5", { maxTokens: 128_000 })), 64_000);
+		assert.equal(claudeCodeMaxOutputTokens(source("claude-future", { maxTokens: 128_000 })), 64_000);
 	});
 });
 

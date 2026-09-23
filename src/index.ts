@@ -18,6 +18,7 @@ import { debug, errorMessage } from "./debug.js";
 import { applyLongContext, buildModels } from "./models.js";
 import {
 	isolatedStreamFn,
+	prepareForCompactionContinuation,
 	reinjectPriorCompactionFileOps,
 	setAskClaudeToolName,
 	streamClaudeAgentSdk,
@@ -109,6 +110,11 @@ export default function activate(pi: ExtensionAPI): void {
 				isolatedStreamFn,
 				undefined, // env
 			);
+			// A Claude Code query spans Pi's tool-result turns. If compaction happened in
+			// the middle of one, rotate it now so the next provider call rebuilds from the
+			// compacted transcript. Overflow recovery needs the same fresh continuation
+			// even when the failed query has already exited.
+			await prepareForCompactionContinuation(event.willRetry);
 			debug(`session_before_compact: takeover complete summaryLen=${compaction.summary.length}`);
 			return { compaction };
 		} catch (err) {

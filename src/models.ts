@@ -126,6 +126,26 @@ export interface ClaudeCodeRuntimeModel {
 }
 
 /**
+ * Maximum output Claude Code reserves when it serves each model.
+ *
+ * Pi's fixed 16K default compaction reserve is smaller than every value here. The provider
+ * uses this measured budget to report threshold pressure before Claude Code rejects an
+ * internal tool-result turn for lacking output room. Keep it in sync with
+ * `diag/context-size.ts`; unknown models conservatively use up to 64K.
+ */
+export function claudeCodeMaxOutputTokens(model: Pick<SourceModel, "id" | "maxTokens">): number {
+	switch (model.id) {
+		case "claude-opus-5-5":
+			return Math.min(model.maxTokens, 128_000);
+		case "claude-sonnet-4-6":
+		case "claude-haiku-4-5":
+			return Math.min(model.maxTokens, 32_000);
+		default:
+			return Math.min(model.maxTokens, 64_000);
+	}
+}
+
+/**
  * Measured Claude Agent SDK subscription/OAuth behaviour.
  *
  * Do not infer this from pi-ai's advertised contextWindow: bare Opus 4.7 serves 1M,

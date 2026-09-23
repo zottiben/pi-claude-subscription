@@ -19,9 +19,17 @@ npx tsx diag/context-size.ts claude-opus-5-5 # one id, bare and [1m]
 
 Options used: `settingSources: []`, `tools: []`, `skills: []`, `maxTurns: 1`,
 `persistSession: false`, model passed via `extraArgs.model` — which is the path the
-provider itself uses.
+provider itself uses. The probe loads `pathToClaudeCodeExecutable` from the extension
+config so it measures the same Claude Code version as the provider.
 
 ## Measurements
+
+**2026-09-24**, Claude Agent SDK 0.3.280 with configured Claude Code 2.1.280, Max plan.
+
+| requested id | served context | max output | served model |
+|---|---|---|---|
+| `claude-opus-5-5` | 1M | 128K | `claude-opus-5-5` |
+| `claude-opus-5-5[1m]` | 1M | 128K | `claude-opus-5-5[1m]` |
 
 **2026-09-03**, Claude Agent SDK 0.3.259 (Claude Code 2.1.259), Pro plan, Extra Usage off.
 Full catalogue, re-measured after the SDK bump that Fable 5.1 required.
@@ -98,8 +106,8 @@ Pro with credits off. That is why those two stay gated behind `plan` and
 
 ## Note on max output tokens
 
-The probe also reports `maxOutputTokens`, which came back as 64K for every model above
-(32K for Sonnet 4.6 and Haiku 4.5 in the 2026-09-03 run), while pi-ai's catalogue
-advertises 128K. This is recorded rather than acted on: the
-extension does not send a max-tokens value, so the served figure is Claude Code's own
-default for a one-turn probe and not necessarily what a real session gets.
+The probe also reports `maxOutputTokens`: 128K for Opus 5.5, 64K for most earlier models,
+and 32K for Sonnet 4.6 and Haiku 4.5. Pi's default compaction reserve is only 16K, while
+the extension cannot send a smaller max-tokens value to Claude Code. The provider therefore
+uses these served budgets to signal compaction pressure once raw usage leaves insufficient
+output room; see `claudeCodeMaxOutputTokens()` and `updateUsage()`.

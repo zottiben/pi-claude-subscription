@@ -150,16 +150,19 @@ function verifyWrittenSession(
 }
 
 /**
- * Ensure the shared session covers every message up to (but excluding) the latest user
- * prompt. Returns the session id to resume from, or null when Claude Code should start clean.
+ * Ensure the shared session covers every message up to (but normally excluding) the
+ * latest user prompt. A post-compaction continuation instead imports a trailing tool
+ * result before sending its provider-only continuation prompt. Returns the session id to
+ * resume from, or null when Claude Code should start clean.
  */
 export function syncSharedSession(
 	messages: Context["messages"],
 	cwd: string,
 	customToolNameToSdk?: Map<string, string>,
 	modelId?: string,
+	options?: { includeLastMessage?: boolean },
 ): SyncResult {
-	const priorMessages = messages.slice(0, -1); // everything before the new user prompt
+	const priorMessages = options?.includeLastMessage ? messages : messages.slice(0, -1);
 
 	// --- REUSE ---
 	//

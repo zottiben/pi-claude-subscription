@@ -6,7 +6,7 @@
 // expensive to notice), so the branches are pinned here.
 
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, afterEach, before, describe, it } from "node:test";
@@ -30,16 +30,31 @@ function user(text: string): Message {
 }
 
 function assistantMsg(text: string): Message {
+	return assistant([{ type: "text", text }], "stop");
+}
+
+function assistant(content: unknown[], stopReason: "stop" | "toolUse"): Message {
 	return {
 		role: "assistant",
-		content: [{ type: "text", text }],
+		content,
 		api: "anthropic-messages",
 		provider: "anthropic",
 		model: "claude-opus-4-8",
 		usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
-		stopReason: "stop",
+		stopReason,
 		timestamp: 0,
-	};
+	} as Message;
+}
+
+function toolResult(toolCallId: string, text: string): Message {
+	return {
+		role: "toolResult",
+		toolCallId,
+		toolName: "bash",
+		content: [{ type: "text", text }],
+		isError: false,
+		timestamp: 0,
+	} as Message;
 }
 
 function withCwd<T>(fn: (cwd: string) => T): T {
@@ -49,6 +64,19 @@ function withCwd<T>(fn: (cwd: string) => T): T {
 	} finally {
 		rmSync(cwd, { recursive: true, force: true });
 	}
+}
+
+function findFile(root: string, fileName: string): string | undefined {
+	for (const entry of readdirSync(root, { withFileTypes: true })) {
+		const path = join(root, entry.name);
+		if (entry.isDirectory()) {
+			const nested = findFile(path, fileName);
+			if (nested) return nested;
+		} else if (entry.name === fileName) {
+			return path;
+		}
+	}
+	return undefined;
 }
 
 // syncSharedSession writes real session JSONL through cc-session-io, which defaults to
@@ -126,6 +154,25 @@ describe("syncSharedSession REBUILD", () => {
 		const result = syncSharedSession([user("a"), assistantMsg("b"), user("c")], cwd);
 		assert.ok(result.sessionId, "expected a session id");
 		assert.equal(getSharedSession()?.cursor, 2, "cursor covers everything before the new prompt");
+	}));
+
+	it("imports a trailing tool result for a post-compaction continuation", () => withCwd((cwd) => {
+		const toolCallId = "toolu_compaction";
+		const messages = [
+			user("run it"),
+			assistant([{ type: "toolCall", id: toolCallId, name: "bash", arguments: { command: "echo ok" } }], "toolUse"),
+			toolResult(toolCallId, "REAL_TOOL_OUTPUT"),
+		];
+
+		const result = syncSharedSession(messages, cwd, undefined, undefined, { includeLastMessage: true });
+
+		assert.ok(result.sessionId, "expected a rebuilt session");
+		assert.equal(getSharedSession()?.cursor, messages.length);
+		const jsonlPath = findFile(claudeDir, `${result.sessionId}.jsonl`);
+		assert.ok(jsonlPath, "expected the rebuilt session JSONL");
+		const jsonl = readFileSync(jsonlPath, "utf8");
+		assert.match(jsonl, /REAL_TOOL_OUTPUT/);
+		assert.doesNotMatch(jsonl, /\[no tool result recorded\]/);
 	}));
 
 	it("keeps the same session id across an in-place rebuild", () => withCwd((cwd) => {

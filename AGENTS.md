@@ -30,6 +30,16 @@ known to hang. A takeover regression therefore leaves the context oversized: the
 turn can report `Prompt is too long`, retry compaction, and fail the same way. Preserve a
 regression test for every bug in this path.
 
+Claude Code queries also span multiple Pi tool-result turns. A compaction boundary in the
+middle of that loop must abort and settle the old query, then rebuild a one-shot
+continuation from Pi's compacted transcript. Otherwise Claude keeps the old oversized
+history, or Pi mistakes the retained tool result for an orphan and emits an empty reply.
+
+Finally, Pi's default 16K compaction reserve is smaller than Claude Code's served maximum
+output (128K for Opus 5.5). `updateUsage()` preserves raw counts until that output headroom
+is exhausted, then signals threshold pressure. Keep the measured budgets in
+`claudeCodeMaxOutputTokens()` synchronized with `diag/context-size.ts`.
+
 ## Releases
 
 Releases are tag-driven. The tag must match `package.json`. Update `package.json`,
