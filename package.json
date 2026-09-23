@@ -1,6 +1,6 @@
 {
   "name": "pi-claude-subscription",
-  "version": "0.2.2",
+  "version": "0.3.0",
   "private": false,
   "description": "Pi extension that uses your Claude subscription (via the Claude Agent SDK) as a model provider, and adds an AskClaude delegation tool.",
   "keywords": [
