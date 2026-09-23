@@ -1,8 +1,10 @@
 # Context windows served by the Claude Agent SDK
 
-The runtime table in `src/models.ts` is measured, not inferred. It cannot be derived from a
-model's advertised context window: bare Opus 4.7 has served 1M while bare Opus 4.8 served
-200K, and `[1m]` entitlement varies by model, plan, and whether Extra Usage is enabled.
+Entitlement-dependent entries in the runtime table in `src/models.ts` are measured rather
+than inferred. They cannot generally be derived from a model's advertised context window:
+bare Opus 4.7 has served 1M while bare Opus 4.8 served 200K, and `[1m]` entitlement varies
+by model, plan, and whether Extra Usage is enabled. Models whose published specification
+makes 1M both the default and maximum use that native window directly.
 
 ## Method
 
@@ -12,7 +14,7 @@ turn, and records `result.modelUsage[*].contextWindow`. Auth is subscription OAu
 
 ```
 npx tsx diag/context-size.ts                 # every catalogue model
-npx tsx diag/context-size.ts claude-opus-5   # one id, bare and [1m]
+npx tsx diag/context-size.ts claude-opus-5-5 # one id, bare and [1m]
 ```
 
 Options used: `settingSources: []`, `tools: []`, `skills: []`, `maxTurns: 1`,

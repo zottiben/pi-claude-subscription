@@ -8,6 +8,7 @@ import type { Api, Model } from "@earendil-works/pi-ai";
  *  `resolveModel` returns the first partial match, so `"opus"` resolves to the first opus
  *  entry listed here and `"fable"` to the first fable entry. */
 export const MODEL_IDS_IN_ORDER = [
+	"claude-opus-5-5",
 	"claude-opus-5",
 	"claude-fable-5-1",
 	"claude-fable-5",
@@ -36,13 +37,30 @@ const DEFAULT_THINKING_LEVEL_MAPS: Record<string, Model<Api>["thinkingLevelMap"]
  *
  * `buildModels` drops unknown ids, so without this a model released between pi-ai versions
  * would be invisible here no matter what the rest of this file says. pi-ai's own entry wins
- * as soon as it exists; delete an entry from this table once it does.
+ * as soon as it exists.
  *
- * Fields mirror pi-ai's shape for the previous model in the family, corrected against the
- * published model specs. Fable 5.1 offers the same effort levels as Fable 5
- * (low/medium/high/xhigh/max), so it carries the same thinkingLevelMap.
+ * Fields mirror pi-ai's entries, corrected against the published model specs. Keep a
+ * fallback until this package's minimum supported pi-ai version contains the model, not
+ * merely until the latest pi-ai does, or older compatible Pi installs silently lose it.
  */
 const PI_AI_FALLBACK_MODELS: Record<string, SourceModel> = {
+	"claude-opus-5-5": {
+		id: "claude-opus-5-5",
+		name: "Claude Opus 5.5",
+		reasoning: true,
+		input: ["text", "image"],
+		contextWindow: ONE_M_CONTEXT,
+		maxTokens: 128_000,
+		thinkingLevelMap: {
+			off: null,
+			minimal: null,
+			low: "low",
+			medium: "medium",
+			high: "high",
+			xhigh: "xhigh",
+			max: "max",
+		},
+	},
 	"claude-fable-5-1": {
 		id: "claude-fable-5-1",
 		name: "Claude Fable 5.1",
@@ -117,6 +135,10 @@ export interface ClaudeCodeRuntimeModel {
  */
 export function resolveClaudeCodeRuntimeModel(modelId: string, settings: LongContextSettings): ClaudeCodeRuntimeModel {
 	switch (modelId) {
+		// Opus 5.5 has a native 1M window in Anthropic's published specification: 1M is both
+		// the default and the maximum, so unlike entitlement-dependent models it needs no suffix.
+		case "claude-opus-5-5":
+			return { cliModelId: "claude-opus-5-5", contextWindow: ONE_M_CONTEXT };
 		// Measured 1M both bare and with [1m], no rejection. The suffix is kept because it
 		// requests 1M explicitly rather than depending on a default entitlement, and that
 		// default has already changed once (see diag/CONTEXT-SIZE.md).

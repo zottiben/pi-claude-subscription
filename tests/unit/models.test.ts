@@ -58,20 +58,30 @@ describe("buildModels", () => {
 		assert.ok(built.some((m) => m.id === "claude-opus-4-8"), "a known id survives");
 	});
 
-	// pi-ai has no claude-fable-5-1 entry yet, so without the fallback table Fable 5.1 would
-	// be dropped by the rule above and never reach the picker.
-	it("falls back to a local entry for a model pi-ai hasn't shipped", () => {
+	// The minimum supported pi-ai has neither recent model, so without local fallbacks they
+	// would be dropped by the rule above and never reach the picker.
+	it("falls back to local entries for models the minimum pi-ai version hasn't shipped", () => {
 		const built = buildModels([source("claude-opus-4-8")]);
+		const opus = built.find((m) => m.id === "claude-opus-5-5");
+		assert.ok(opus, "Opus 5.5 should be registered without a pi-ai entry");
+		assert.equal(opus.name, "Claude Opus 5.5");
+		assert.equal(opus.contextWindow, ONE_M_CONTEXT);
+		assert.equal(opus.maxTokens, 128_000);
+		assert.equal(opus.thinkingLevelMap?.off, null);
+		assert.equal(opus.thinkingLevelMap?.xhigh, "xhigh");
+
 		const fable = built.find((m) => m.id === "claude-fable-5-1");
 		assert.ok(fable, "Fable 5.1 should be registered without a pi-ai entry");
 		assert.equal(fable.name, "Claude Fable 5.1");
-		assert.equal(fable.contextWindow, ONE_M_CONTEXT);
-		assert.equal(fable.thinkingLevelMap?.xhigh, "xhigh");
 	});
 
-	it("prefers pi-ai's entry over the fallback once pi-ai ships the id", () => {
-		const built = buildModels([source("claude-fable-5-1", { name: "From pi-ai" })]);
-		assert.equal(built.find((m) => m.id === "claude-fable-5-1")?.name, "From pi-ai");
+	it("prefers pi-ai's entries over local fallbacks once pi-ai ships the ids", () => {
+		const built = buildModels([
+			source("claude-opus-5-5", { name: "Opus from pi-ai" }),
+			source("claude-fable-5-1", { name: "Fable from pi-ai" }),
+		]);
+		assert.equal(built.find((m) => m.id === "claude-opus-5-5")?.name, "Opus from pi-ai");
+		assert.equal(built.find((m) => m.id === "claude-fable-5-1")?.name, "Fable from pi-ai");
 	});
 
 	it("zeroes cost, since these bill against a subscription", () => {
@@ -89,6 +99,14 @@ describe("buildModels", () => {
 });
 
 describe("resolveClaudeCodeRuntimeModel", () => {
+	it("gives native-1M Opus 5.5 1M on every plan, with no suffix or gating", () => {
+		for (const settings of [PRO, MAX, PRO_EXTRA]) {
+			assert.deepEqual(resolveClaudeCodeRuntimeModel("claude-opus-5-5", settings), {
+				cliModelId: "claude-opus-5-5", contextWindow: ONE_M_CONTEXT,
+			});
+		}
+	});
+
 	it("gives Opus 5 1M on every plan, with no gating", () => {
 		for (const settings of [PRO, MAX, PRO_EXTRA]) {
 			assert.deepEqual(resolveClaudeCodeRuntimeModel("claude-opus-5", settings), {
@@ -181,11 +199,12 @@ describe("resolveModel", () => {
 
 	// AskClaudeCode defaults to model "opus", so this decides what a plain delegation gets.
 	it("resolves a bare family name to the first entry in picker order", () => {
-		assert.equal(resolveModel(models, "opus")?.id, "claude-opus-5");
+		assert.equal(resolveModel(models, "opus")?.id, "claude-opus-5-5");
 		assert.equal(resolveModel(models, "sonnet")?.id, "claude-sonnet-5");
 	});
 
 	it("still resolves an explicit older id", () => {
+		assert.equal(resolveModel(models, "claude-opus-5")?.id, "claude-opus-5");
 		assert.equal(resolveModel(models, "claude-opus-4-8")?.id, "claude-opus-4-8");
 		assert.equal(resolveModel(models, "opus-4-7")?.id, "claude-opus-4-7");
 	});
