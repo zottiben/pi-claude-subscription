@@ -22,6 +22,7 @@ import type { Base64ImageSource, ContentBlockParam, MessageParam } from "@anthro
 import {
 	createAssistantMessageEventStream,
 	getCurrentSystemPrompt,
+	withoutInitialSystemMessage,
 	type AssistantMessage,
 	type AssistantMessageEventStream,
 	type SimpleStreamOptions,
@@ -201,14 +202,18 @@ function contextForToolResults(results: readonly McpResult[]): QueryContext | un
 // models can't be driven that way, so the extension takes the summarisation over with a
 // one-shot, tool-less, non-persisted query.
 
-function extractIsolatedSummaryPrompt(messages: TranscriptContext["messages"]): string {
-	if (messages.length !== 1 || messages[0]?.role !== "user") {
+export function extractIsolatedSummaryPrompt(messages: TranscriptContext["messages"]): string {
+	// Pi normalises the summarization system prompt into a leading system message rather
+	// than a separate field, so the transcript arrives as [system, user]. That prompt is
+	// replayed separately by runIsolatedSummary; here we want only the conversation turn.
+	const conversation = withoutInitialSystemMessage(messages);
+	if (conversation.length !== 1 || conversation[0]?.role !== "user") {
 		throw new Error(
-			`isolatedStreamFn: expected exactly 1 user message, got ${messages.length} ` +
-			`(${messages.map((m) => m.role).join(",")})`,
+			`isolatedStreamFn: expected exactly 1 user message, got ${conversation.length} ` +
+			`(${conversation.map((m) => m.role).join(",")})`,
 		);
 	}
-	const promptText = extractUserPrompt(messages);
+	const promptText = extractUserPrompt(conversation);
 	if (!promptText) throw new Error("isolatedStreamFn: summarization prompt is empty");
 	return promptText;
 }
