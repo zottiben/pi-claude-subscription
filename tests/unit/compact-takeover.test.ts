@@ -8,8 +8,17 @@
 
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import type { Message } from "@earendil-works/pi-ai";
-import { normalizeContext } from "@earendil-works/pi-ai";
+import {
+	createAssistantMessageEventStream,
+	getCurrentSystemPrompt,
+	getCurrentTools,
+	normalizeContext,
+	type AssistantMessage,
+	type Message,
+} from "@earendil-works/pi-ai";
+import { compact } from "@earendil-works/pi-coding-agent";
+import { buildModels } from "../../src/models.js";
+import type { BridgeModel } from "../../src/types.js";
 import {
 	consumeCompactionContinuation,
 	extractIsolatedSummaryPrompt,
@@ -26,6 +35,64 @@ function summarizationMessages(promptText: string): Message[] {
 		messages: [{ role: "user", content: [{ type: "text", text: promptText }], timestamp: 0 }],
 	}).messages;
 }
+
+describe("Pi compaction API compatibility", () => {
+	for (const isSplitTurn of [false, true]) {
+		it(`passes ${isSplitTurn ? "split-turn" : "ordinary"} summaries through the takeover extractor`, async () => {
+			const source = buildModels([]).find((model) => model.id === "claude-haiku-5-5");
+			assert.ok(source);
+			const model: BridgeModel = {
+				...source,
+				api: "claude-subscription",
+				provider: "claude-subscription",
+				baseUrl: "claude-code://subscription",
+			};
+			const preparation: Parameters<typeof compact>[0] = {
+				firstKeptEntryId: "kept-entry",
+				messagesToSummarize: [{ role: "user", content: "HISTORY_MARKER", timestamp: 0 }],
+				turnPrefixMessages: isSplitTurn ? [{ role: "user", content: "TURN_MARKER", timestamp: 1 }] : [],
+				isSplitTurn,
+				tokensBefore: 100_000,
+				fileOps: { read: new Set(["read.ts"]), edited: new Set(["edited.ts"]), written: new Set() },
+				settings: { enabled: true, reserveTokens: 16_384, keepRecentTokens: 20_000 },
+			};
+			const signal = new AbortController().signal;
+			const prompts: string[] = [];
+			const result = await compact(preparation, model, undefined, undefined, undefined, signal, undefined,
+				(_model, context, options) => {
+					prompts.push(extractIsolatedSummaryPrompt(context.messages));
+					assert.ok(getCurrentSystemPrompt(context.messages));
+					assert.deepEqual(getCurrentTools(context.messages), []);
+					assert.equal(options?.signal, signal);
+					const message: AssistantMessage = {
+						role: "assistant",
+						content: [{ type: "text", text: `Summary ${prompts.length}` }],
+						api: model.api, provider: model.provider, model: model.id,
+						usage: {
+							input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0,
+							cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+						},
+						stopReason: "stop", timestamp: 0,
+					};
+					const stream = createAssistantMessageEventStream();
+					stream.push({ type: "done", reason: "stop", message });
+					stream.end();
+					return stream;
+				});
+
+			assert.equal(prompts.length, isSplitTurn ? 2 : 1);
+			assert.match(prompts[0], /HISTORY_MARKER/);
+			if (isSplitTurn) {
+				assert.match(prompts[1], /TURN_MARKER/);
+				assert.match(result.summary, /Summary 2/);
+			}
+			assert.match(result.summary, /Summary 1/);
+			assert.equal(result.firstKeptEntryId, preparation.firstKeptEntryId);
+			assert.equal(result.tokensBefore, preparation.tokensBefore);
+			assert.deepEqual(result.details, { readFiles: ["read.ts"], modifiedFiles: ["edited.ts"] });
+		});
+	}
+});
 
 describe("compaction continuation", () => {
 	it("turns an overflow retry into exactly one fresh continuation", async () => {
