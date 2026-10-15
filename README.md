@@ -23,7 +23,7 @@ TypeScript throughout, `strict` mode, no build step — pi loads the `.ts` sourc
 From GitHub (no npm account needed):
 
 ```
-pi install git:github.com/zottiben/pi-claude-subscription@v0.3.2
+pi install git:github.com/zottiben/pi-claude-subscription@v0.4.0
 ```
 
 Or from a local checkout, which is also the best way to develop — the path is referenced
@@ -76,8 +76,10 @@ Use `/model` and pick one of:
 | `claude-subscription/claude-opus-4-8` | 1M |
 | `claude-subscription/claude-opus-4-7` | 1M |
 | `claude-subscription/claude-opus-4-6` | 200K, or 1M on Max / with extra usage |
+| `claude-subscription/claude-sonnet-5-5` | 1M |
 | `claude-subscription/claude-sonnet-5` | 1M |
 | `claude-subscription/claude-sonnet-4-6` | 200K, or 1M with extra usage |
+| `claude-subscription/claude-haiku-5-5` | 1M |
 | `claude-subscription/claude-haiku-4-5` | 200K |
 
 Behind the scenes pi's tools are bridged into Claude Code over an in-process MCP server,
@@ -87,13 +89,13 @@ timeout to match Claude Code, since pi's bash has none.
 Your `AGENTS.md` and pi's skills block are forwarded into Claude Code's system prompt, with
 pi-specific paths rewritten to their Claude Code equivalents.
 
-**1M context.** Opus 5.5, Opus 5, Opus 4.7 and 4.8, Fable 5.1, Fable 5 and Sonnet 5 get 1M by
-default. Opus 4.6 needs a Max plan or Extra Usage; Sonnet 4.6 needs Extra Usage on any
-plan. Set `provider.plan` and `provider.longContextExtraUsage` accordingly, see
-[Configuration](#configuration). The window registered with pi always matches what the
-extension actually requests. The provider signals auto-compaction before Claude Code's
-served output headroom is exhausted (up to 128K for Opus 5.5), rather than waiting for the
-last 16K of the advertised window.
+**1M context.** Opus 5.5, Opus 5, Opus 4.7 and 4.8, Fable 5.1, Fable 5, Sonnet 5.5,
+Sonnet 5 and Haiku 5.5 get 1M by default. Opus 4.6 needs a Max plan or Extra Usage;
+Sonnet 4.6 needs Extra Usage on any plan. Set `provider.plan` and
+`provider.longContextExtraUsage` accordingly, see [Configuration](#configuration). The
+window registered with pi always matches what the extension actually requests. The provider
+signals auto-compaction before Claude Code's served output headroom is exhausted (128K for
+Opus, Sonnet and Haiku 5.5), rather than waiting for the last 16K of the advertised window.
 
 ## AskClaudeCode tool
 
@@ -110,7 +112,7 @@ Available whenever the active provider is *not* `claude-subscription`. Examples:
 |---|---|
 | `prompt` | The question or task. Claude sees the full conversation by default — let it explore rather than researching up front. |
 | `mode` | `read` (default), `none`, or `full` (read + write + bash). Disable `full` with `allowFullMode: false`. |
-| `model` | `opus` (default, currently resolves to Opus 5.5), `sonnet`, `haiku`, `fable` (resolves to Fable 5.1), or a full model id. |
+| `model` | `opus` (default, resolves to Opus 5.5), `sonnet` (Sonnet 5.5), `haiku` (Haiku 5.5), `fable` (Fable 5.1), or a full model id. |
 | `thinking` | `off`, `minimal`, `low`, `medium`, `high`, `xhigh`. |
 | `isolated` | `true` gives Claude a clean session with no conversation history. Default `false`. |
 
@@ -228,8 +230,9 @@ entry wins as soon as it exists. Keep the fallback until the package's minimum s
 pi-ai version includes the model; then delete it rather than leave two sources of truth.
 
 A model can also need a newer Claude Code than the pinned
-`@anthropic-ai/claude-agent-sdk` bundles (Opus 5.5 needs v2.1.280+, Fable 5.1 needs
-v2.1.255+, and SDK `0.3.x` bundles Claude Code `2.1.x`). Bump the SDK in the same change,
+`@anthropic-ai/claude-agent-sdk` bundles (Haiku 5.5 needs v2.1.293+, Sonnet 5.5 needs
+v2.1.284+, Opus 5.5 needs v2.1.280+, and Fable 5.1 needs v2.1.255+). SDK `0.3.x` bundles
+Claude Code `2.1.x`; this release uses SDK 0.3.300. Bump the SDK in the same change,
 or the id is rejected at runtime. This does not apply when
 `provider.pathToClaudeCodeExecutable` points at your own
 CLI, where that binary's version is what counts.

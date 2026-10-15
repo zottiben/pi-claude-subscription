@@ -24,6 +24,26 @@ config so it measures the same Claude Code version as the provider.
 
 ## Measurements
 
+**2026-10-15**, Claude Agent SDK 0.3.300 with bundled Claude Code 2.1.300,
+subscription OAuth (`ANTHROPIC_API_KEY` unset), no executable override.
+
+| requested id | served context | max output | served model |
+|---|---|---|---|
+| `claude-sonnet-5-5` | 1M | 128K | `claude-sonnet-5-5` |
+| `claude-sonnet-5-5[1m]` | 1M | 128K | `claude-sonnet-5-5[1m]` |
+| `claude-haiku-5-5` | 1M | 128K | `claude-haiku-5-5` |
+| `claude-haiku-5-5[1m]` | 1M | 128K | `claude-haiku-5-5[1m]` |
+
+Both use the bare id: Anthropic specifies native 1M context for
+[Sonnet 5.5](https://platform.claude.com/docs/en/models/sonnet-5-5/overview) and
+[Haiku 5.5](https://platform.claude.com/docs/en/models/haiku-5-5/overview), and the
+subscription probe confirms it without an entitlement suffix. Existing 4.6 gates are unchanged.
+
+The SDK's `supportedModels()` reports `low`, `medium`, `high`, `xhigh`, and `max`
+effort for both, with `supportsThinkingOff: false`. The local Pi catalogue fallbacks
+therefore expose those five effort levels, not `off` or `minimal`. This describes
+Claude Code's controls, not every thinking mode accepted by the direct Messages API.
+
 **2026-09-24**, Claude Agent SDK 0.3.280 with configured Claude Code 2.1.280, Max plan.
 
 | requested id | served context | max output | served model |
@@ -106,8 +126,9 @@ Pro with credits off. That is why those two stay gated behind `plan` and
 
 ## Note on max output tokens
 
-The probe also reports `maxOutputTokens`: 128K for Opus 5.5, 64K for most earlier models,
-and 32K for Sonnet 4.6 and Haiku 4.5. Pi's default compaction reserve is only 16K, while
-the extension cannot send a smaller max-tokens value to Claude Code. The provider therefore
+The probe also reports `maxOutputTokens`: 128K for Opus, Sonnet and Haiku 5.5, 64K for
+most earlier models, and 32K for Sonnet 4.6 and Haiku 4.5. Pi's default compaction reserve
+is only 16K, while the extension cannot send a smaller max-tokens value to Claude Code.
+The provider therefore
 uses these served budgets to signal compaction pressure once raw usage leaves insufficient
 output room; see `claudeCodeMaxOutputTokens()` and `updateUsage()`.

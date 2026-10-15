@@ -15,8 +15,10 @@ export const MODEL_IDS_IN_ORDER = [
 	"claude-opus-4-8",
 	"claude-opus-4-7",
 	"claude-opus-4-6",
+	"claude-sonnet-5-5",
 	"claude-sonnet-5",
 	"claude-sonnet-4-6",
+	"claude-haiku-5-5",
 	"claude-haiku-4-5",
 ] as const;
 
@@ -47,6 +49,41 @@ const PI_AI_FALLBACK_MODELS: Record<string, SourceModel> = {
 	"claude-opus-5-5": {
 		id: "claude-opus-5-5",
 		name: "Claude Opus 5.5",
+		reasoning: true,
+		input: ["text", "image"],
+		contextWindow: ONE_M_CONTEXT,
+		maxTokens: 128_000,
+		thinkingLevelMap: {
+			off: null,
+			minimal: null,
+			low: "low",
+			medium: "medium",
+			high: "high",
+			xhigh: "xhigh",
+			max: "max",
+		},
+	},
+	"claude-sonnet-5-5": {
+		id: "claude-sonnet-5-5",
+		name: "Claude Sonnet 5.5",
+		reasoning: true,
+		input: ["text", "image"],
+		contextWindow: ONE_M_CONTEXT,
+		maxTokens: 128_000,
+		// Claude Code exposes effort, not thinking-off, for both new 5.5 models.
+		thinkingLevelMap: {
+			off: null,
+			minimal: null,
+			low: "low",
+			medium: "medium",
+			high: "high",
+			xhigh: "xhigh",
+			max: "max",
+		},
+	},
+	"claude-haiku-5-5": {
+		id: "claude-haiku-5-5",
+		name: "Claude Haiku 5.5",
 		reasoning: true,
 		input: ["text", "image"],
 		contextWindow: ONE_M_CONTEXT,
@@ -136,6 +173,8 @@ export interface ClaudeCodeRuntimeModel {
 export function claudeCodeMaxOutputTokens(model: Pick<SourceModel, "id" | "maxTokens">): number {
 	switch (model.id) {
 		case "claude-opus-5-5":
+		case "claude-sonnet-5-5":
+		case "claude-haiku-5-5":
 			return Math.min(model.maxTokens, 128_000);
 		case "claude-sonnet-4-6":
 		case "claude-haiku-4-5":
@@ -155,10 +194,12 @@ export function claudeCodeMaxOutputTokens(model: Pick<SourceModel, "id" | "maxTo
  */
 export function resolveClaudeCodeRuntimeModel(modelId: string, settings: LongContextSettings): ClaudeCodeRuntimeModel {
 	switch (modelId) {
-		// Opus 5.5 has a native 1M window in Anthropic's published specification: 1M is both
-		// the default and the maximum, so unlike entitlement-dependent models it needs no suffix.
+		// The 5.5 models have native 1M windows, confirmed by the subscription probe.
+		// Unlike entitlement-dependent models they need no suffix.
 		case "claude-opus-5-5":
-			return { cliModelId: "claude-opus-5-5", contextWindow: ONE_M_CONTEXT };
+		case "claude-sonnet-5-5":
+		case "claude-haiku-5-5":
+			return { cliModelId: modelId, contextWindow: ONE_M_CONTEXT };
 		// Measured 1M both bare and with [1m], no rejection. The suffix is kept because it
 		// requests 1M explicitly rather than depending on a default entitlement, and that
 		// default has already changed once (see diag/CONTEXT-SIZE.md).

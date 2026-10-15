@@ -59,7 +59,7 @@ describe("buildModels", () => {
 		assert.ok(built.some((m) => m.id === "claude-opus-4-8"), "a known id survives");
 	});
 
-	// The minimum supported pi-ai has neither recent model, so without local fallbacks they
+	// The minimum supported pi-ai lacks recent models, so without local fallbacks they
 	// would be dropped by the rule above and never reach the picker.
 	it("falls back to local entries for models the minimum pi-ai version hasn't shipped", () => {
 		const built = buildModels([source("claude-opus-4-8")]);
@@ -75,6 +75,26 @@ describe("buildModels", () => {
 		assert.ok(fable, "Fable 5.1 should be registered without a pi-ai entry");
 		assert.equal(fable.name, "Claude Fable 5.1");
 	});
+
+	for (const [id, name] of [["claude-sonnet-5-5", "Claude Sonnet 5.5"], ["claude-haiku-5-5", "Claude Haiku 5.5"]]) {
+		it(`registers ${name} without an upstream catalogue entry`, () => {
+			const model = buildModels([]).find((m) => m.id === id);
+			assert.ok(model);
+			assert.equal(model.name, name);
+			assert.equal(model.reasoning, true);
+			assert.deepEqual(model.input, ["text", "image"]);
+			assert.equal(model.contextWindow, ONE_M_CONTEXT);
+			assert.equal(model.maxTokens, 128_000);
+			assert.deepEqual(model.thinkingLevelMap, {
+				off: null, minimal: null, low: "low", medium: "medium", high: "high", xhigh: "xhigh", max: "max",
+			});
+			assert.deepEqual(model.cost, { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 });
+		});
+
+		it(`prefers upstream metadata for ${name} when available`, () => {
+			assert.equal(buildOne(id, { name: "From pi-ai" })?.name, "From pi-ai");
+		});
+	}
 
 	it("prefers pi-ai's entries over local fallbacks once pi-ai ships the ids", () => {
 		const built = buildModels([
@@ -104,6 +124,13 @@ describe("claudeCodeMaxOutputTokens", () => {
 		assert.equal(claudeCodeMaxOutputTokens(source("claude-opus-5-5", { maxTokens: 128_000 })), 128_000);
 	});
 
+	for (const id of ["claude-sonnet-5-5", "claude-haiku-5-5"]) {
+		it(`reserves the served 128K output budget for ${id}, capped by model metadata`, () => {
+			assert.equal(claudeCodeMaxOutputTokens(source(id, { maxTokens: 128_000 })), 128_000);
+			assert.equal(claudeCodeMaxOutputTokens(source(id, { maxTokens: 32_000 })), 32_000);
+		});
+	}
+
 	it("uses the smaller served budget for 200K Sonnet and Haiku", () => {
 		assert.equal(claudeCodeMaxOutputTokens(source("claude-sonnet-4-6")), 32_000);
 		assert.equal(claudeCodeMaxOutputTokens(source("claude-haiku-4-5")), 32_000);
@@ -123,6 +150,20 @@ describe("resolveClaudeCodeRuntimeModel", () => {
 			});
 		}
 	});
+
+	for (const id of ["claude-sonnet-5-5", "claude-haiku-5-5"]) {
+		it(`gives native-1M ${id} 1M on every plan, without a suffix`, () => {
+			for (const settings of [PRO, MAX, PRO_EXTRA, { ...MAX, longContextExtraUsage: true }]) {
+				assert.deepEqual(resolveClaudeCodeRuntimeModel(id, settings), {
+					cliModelId: id, contextWindow: ONE_M_CONTEXT,
+				});
+				assert.equal(claudeCodeModelId({ id }, settings), id);
+				const registered = applyLongContext(buildModels([]), settings).find((m) => m.id === id);
+				assert.equal(registered?.contextWindow, ONE_M_CONTEXT);
+				assert.match(registered?.name ?? "", /5\.5 1M$/);
+			}
+		});
+	}
 
 	it("gives Opus 5 1M on every plan, with no gating", () => {
 		for (const settings of [PRO, MAX, PRO_EXTRA]) {
@@ -163,7 +204,7 @@ describe("resolveClaudeCodeRuntimeModel", () => {
 		assert.equal(resolveClaudeCodeRuntimeModel("claude-sonnet-4-6", PRO_EXTRA).contextWindow, ONE_M_CONTEXT);
 	});
 
-	it("keeps Haiku at 200K on every plan", () => {
+	it("keeps Haiku 4.5 at 200K on every plan", () => {
 		for (const settings of [PRO, MAX, PRO_EXTRA]) {
 			assert.equal(resolveClaudeCodeRuntimeModel("claude-haiku-4-5", settings).contextWindow, TWO_HUNDRED_K_CONTEXT);
 		}
@@ -217,13 +258,16 @@ describe("resolveModel", () => {
 	// AskClaudeCode defaults to model "opus", so this decides what a plain delegation gets.
 	it("resolves a bare family name to the first entry in picker order", () => {
 		assert.equal(resolveModel(models, "opus")?.id, "claude-opus-5-5");
-		assert.equal(resolveModel(models, "sonnet")?.id, "claude-sonnet-5");
+		assert.equal(resolveModel(models, "sonnet")?.id, "claude-sonnet-5-5");
+		assert.equal(resolveModel(models, "haiku")?.id, "claude-haiku-5-5");
 	});
 
 	it("still resolves an explicit older id", () => {
 		assert.equal(resolveModel(models, "claude-opus-5")?.id, "claude-opus-5");
 		assert.equal(resolveModel(models, "claude-opus-4-8")?.id, "claude-opus-4-8");
 		assert.equal(resolveModel(models, "opus-4-7")?.id, "claude-opus-4-7");
+		assert.equal(resolveModel(models, "claude-sonnet-5")?.id, "claude-sonnet-5");
+		assert.equal(resolveModel(models, "claude-haiku-4-5")?.id, "claude-haiku-4-5");
 	});
 
 	// "fable" follows Claude Code's own alias, which resolves to the newest Fable.

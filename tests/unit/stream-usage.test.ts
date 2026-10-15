@@ -49,6 +49,17 @@ describe("updateUsage context pressure", () => {
 		assert.ok(turn.usage.totalTokens > model.contextWindow - 16_384, "Pi should compact before another Claude turn");
 	});
 
+	for (const id of ["claude-sonnet-5-5", "claude-haiku-5-5"]) {
+		it(`signals pressure at the 128K output boundary for ${id}`, () => {
+			const turn = output();
+			const newModel = { ...model, id };
+			updateUsage(turn, { input_tokens: 870_000, output_tokens: 1_000 }, newModel);
+			assert.equal(turn.usage.totalTokens, 871_000, "raw usage is preserved below the boundary");
+			updateUsage(turn, { input_tokens: 879_000, output_tokens: 1_000 }, newModel);
+			assert.ok(turn.usage.totalTokens > model.contextWindow - 16_384, "128K, not 64K, must remain for output");
+		});
+	}
+
 	it("keeps raw usage unchanged while there is enough output headroom", () => {
 		const turn = output();
 		updateUsage(turn, {

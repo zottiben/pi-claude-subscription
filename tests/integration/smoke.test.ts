@@ -15,12 +15,13 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { after, before, describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
+import { MODEL_IDS_IN_ORDER } from "../../src/models.js";
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const EXTENSION = join(REPO_ROOT, "src", "index.ts");
 
 /** Cheapest model that still exercises the full path. */
-const MODEL = "claude-subscription/claude-haiku-4-5";
+const MODEL = "claude-subscription/claude-haiku-5-5";
 const TIMEOUT_MS = 180_000;
 
 interface RunResult {
@@ -68,10 +69,10 @@ describe("extension registration", { timeout: TIMEOUT_MS }, () => {
 	it("registers every catalogue model with pi", async () => {
 		const { stdout, code } = await runPi(["--list-models", "claude-subscription"]);
 		assert.equal(code, 0);
-		// Opus 5.5 and Fable 5.1 are absent from the minimum supported pi-ai version, so they
+		// Recent models are absent from the minimum supported pi-ai version, so they
 		// only appear if the local fallbacks survive a real registration through pi.
-		for (const id of ["claude-opus-5-5", "claude-opus-5", "claude-fable-5-1", "claude-opus-4-8", "claude-sonnet-5", "claude-haiku-4-5", "claude-fable-5"]) {
-			assert.match(stdout, new RegExp(`claude-subscription\\s+${id}`), `${id} should be registered`);
+		for (const id of MODEL_IDS_IN_ORDER) {
+			assert.match(stdout, new RegExp(`claude-subscription\\s+${id}\\s`), `${id} should be registered`);
 		}
 	});
 
@@ -81,29 +82,33 @@ describe("extension registration", { timeout: TIMEOUT_MS }, () => {
 		assert.match(stdout, /claude-opus-5\s+1M/, "Opus 5 always gets 1M");
 		assert.match(stdout, /claude-fable-5-1\s+1M/, "Fable 5.1 always gets 1M");
 		assert.match(stdout, /claude-opus-4-8\s+1M/, "Opus 4.8 always gets 1M");
-		assert.match(stdout, /claude-haiku-4-5\s+200K/, "Haiku never does");
+		assert.match(stdout, /claude-sonnet-5-5\s+1M/, "Sonnet 5.5 always gets 1M");
+		assert.match(stdout, /claude-haiku-5-5\s+1M/, "Haiku 5.5 always gets 1M");
+		assert.match(stdout, /claude-haiku-4-5\s+200K/, "Haiku 4.5 stays at 200K");
 	});
 });
 
-describe("provider turn", { timeout: TIMEOUT_MS }, () => {
-	it("completes a plain turn", async () => {
-		const { stdout, code } = await runPi([
-			"--model", MODEL, "-p", "Reply with exactly the word PONG and nothing else.",
-		]);
-		assert.equal(code, 0);
-		assert.match(stdout, /PONG/);
-	});
+for (const id of ["claude-haiku-4-5", "claude-sonnet-5-5", "claude-haiku-5-5"]) {
+	describe(`provider turn (${id})`, { timeout: TIMEOUT_MS }, () => {
+		it("completes a plain turn", async () => {
+			const { stdout, code } = await runPi([
+				"--model", `claude-subscription/${id}`, "-p", "Reply with exactly the word PONG and nothing else.",
+			]);
+			assert.equal(code, 0);
+			assert.match(stdout, /PONG/);
+		});
 
-	// The MCP bridge is the deadlock-prone path: Claude Code requests a tool, pi runs it,
-	// and the result has to travel back through a blocked handler.
-	it("round-trips a tool call through pi and back", async () => {
-		const { stdout, code } = await runPi([
-			"--model", MODEL, "-p", "Use the bash tool to run 'echo BRIDGE_OK' and tell me the exact output.",
-		]);
-		assert.equal(code, 0);
-		assert.match(stdout, /BRIDGE_OK/);
+		// The MCP bridge is the deadlock-prone path: Claude Code requests a tool, pi runs it,
+		// and the result has to travel back through a blocked handler.
+		it("round-trips a tool call through pi and back", async () => {
+			const { stdout, code } = await runPi([
+				"--model", `claude-subscription/${id}`, "-p", "Use the bash tool to run 'echo BRIDGE_OK' and tell me the exact output.",
+			]);
+			assert.equal(code, 0);
+			assert.match(stdout, /BRIDGE_OK/);
+		});
 	});
-});
+}
 
 describe("session continuity", { timeout: TIMEOUT_MS }, () => {
 	it("carries history across turns, so Claude Code sees the conversation", async () => {
