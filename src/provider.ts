@@ -202,19 +202,21 @@ async function* wrapPromptStream(blocks: ContentBlockParam[]): AsyncIterable<SDK
  * event, so a stream that is ended without one leaves the turn hanging forever. If the
  * turn output is somehow missing, synthesise one rather than ending empty.
  */
-function terminateStreamWithError(
+export function terminateStreamWithError(
 	queryCtx: QueryContext,
 	model: BridgeModel,
 	reason: "aborted" | "error",
 	message: string,
 ): void {
 	const stream = queryCtx.currentPiStream;
+	// A completed turnOutput is already shared with Pi's transcript; leave it untouched.
+	if (!stream) return;
 	const output = queryCtx.turnOutput ?? newAssistantOutput(model, "", reason, message);
 	output.stopReason = reason;
 	output.errorMessage = message;
-	stream?.push({ type: "error", reason, error: output });
+	stream.push({ type: "error", reason, error: output });
 	markStreamComplete(stream);
-	stream?.end();
+	stream.end();
 	queryCtx.currentPiStream = null;
 }
 

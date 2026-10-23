@@ -23,8 +23,10 @@ import {
 	consumeCompactionContinuation,
 	extractIsolatedSummaryPrompt,
 	prepareForCompactionContinuation,
+	terminateStreamWithError,
 } from "../../src/provider.js";
 import { ctx, resetContext } from "../../src/query-state.js";
+import { processStreamEvent } from "../../src/stream.js";
 
 const SUMMARY_SYSTEM_PROMPT = "You are a context summarization assistant.";
 
@@ -103,21 +105,39 @@ describe("compaction continuation", () => {
 		assert.equal(consumeCompactionContinuation(), false);
 	});
 
-	it("aborts an active query before continuing from a threshold compaction", async () => {
+	it("aborts an active query without changing its completed tool turn during compaction", async () => {
 		resetContext();
 		const queryCtx = ctx();
+		const source = buildModels([]).find((model) => model.id === "claude-haiku-5-5");
+		assert.ok(source);
+		const model: BridgeModel = {
+			...source, api: "claude-subscription", provider: "claude-subscription", baseUrl: "claude-code://subscription",
+		};
+		queryCtx.resetTurnState(model);
+		const stream = createAssistantMessageEventStream();
+		queryCtx.currentPiStream = stream;
+		queryCtx.turnBlocks.push({ type: "toolCall", id: "toolu_before_compaction", name: "bash", arguments: { command: "pwd" } });
+		queryCtx.turnSawToolCall = true;
+		processStreamEvent({ type: "message_stop" }, new Map(), model, queryCtx);
+		const completed = await stream.result();
+		const snapshot = structuredClone(completed);
+
 		let aborted = false;
 		queryCtx.activeQuery = {} as never;
-		queryCtx.abortActiveQuery = () => {
-			aborted = true;
-			queryCtx.activeQuery = null;
-		};
-		queryCtx.activeQueryCompletion = Promise.resolve();
+		queryCtx.activeQueryCompletion = new Promise<void>((resolve) => {
+			queryCtx.abortActiveQuery = () => {
+				aborted = true;
+				queryCtx.activeQuery = null;
+				resolve();
+			};
+		}).then(() => terminateStreamWithError(queryCtx, model, "aborted", "Operation aborted"));
 
 		await prepareForCompactionContinuation(false);
 
 		assert.equal(aborted, true);
+		assert.deepEqual(completed, snapshot);
 		assert.equal(consumeCompactionContinuation(), true);
+		assert.equal(consumeCompactionContinuation(), false);
 	});
 });
 
