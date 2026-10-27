@@ -255,7 +255,6 @@ describe("applyLongContext", () => {
 describe("resolveModel", () => {
 	const models = MODEL_IDS_IN_ORDER.map((id) => ({ id }));
 
-	// AskClaudeCode defaults to model "opus", so this decides what a plain delegation gets.
 	it("resolves a bare family name to the first entry in picker order", () => {
 		assert.equal(resolveModel(models, "opus")?.id, "claude-opus-5-5");
 		assert.equal(resolveModel(models, "sonnet")?.id, "claude-sonnet-5-5");

@@ -38,29 +38,26 @@ function writeConfig(dir: string, contents: unknown): void {
 }
 
 describe("loadConfig", () => {
-	it("reads project config from pi's configured project directory", () => withTempHome(() => withTempDir((cwd) => {
+	it("reads provider config and ignores retired delegation settings", () => withTempHome(() => withTempDir((cwd) => {
 		writeConfig(join(cwd, CONFIG_DIR_NAME), { provider: { plan: "max" }, askClaude: { enabled: false } });
-		assert.deepEqual(loadConfig(cwd), { provider: { plan: "max" }, askClaude: { enabled: false } });
+		assert.deepEqual(loadConfig(cwd), { provider: { plan: "max" } });
 	})));
 
 	it("merges project over global, key by key", () => withTempHome((home) => withTempDir((cwd) => {
 		writeConfig(join(home, ".pi", "agent"), {
 			provider: { plan: "pro", strictMcpConfig: true },
-			askClaude: { enabled: true, defaultMode: "read" },
 		});
 		writeConfig(join(cwd, CONFIG_DIR_NAME), {
 			provider: { plan: "max" },
-			askClaude: { enabled: false },
 		});
 
 		assert.deepEqual(loadConfig(cwd), {
 			provider: { plan: "max", strictMcpConfig: true },
-			askClaude: { enabled: false, defaultMode: "read" },
 		});
 	})));
 
 	it("returns empty sections when no config exists anywhere", () => withTempHome(() => withTempDir((cwd) => {
-		assert.deepEqual(loadConfig(cwd), { provider: {}, askClaude: {} });
+		assert.deepEqual(loadConfig(cwd), { provider: {} });
 	})));
 });
 

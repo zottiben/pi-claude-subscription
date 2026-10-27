@@ -11,27 +11,6 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { CONFIG_FILE_NAME, LOG_PREFIX } from "./constants.js";
 
-export type AskClaudeMode = "full" | "read" | "none";
-
-export interface AskClaudeConfig {
-	/** Register the AskClaude tool at all. Default true. */
-	enabled?: boolean;
-	/** Override the tool's pi-side name. Default "AskClaude". */
-	name?: string;
-	/** Override the TUI label. Default "Ask Claude Code". */
-	label?: string;
-	/** Override the description shown to the calling model. */
-	description?: string;
-	/** Mode used when the caller omits `mode`. Default "read". */
-	defaultMode?: AskClaudeMode;
-	/** Start each call in a fresh session with no conversation history. Default false. */
-	defaultIsolated?: boolean;
-	/** Allow `mode: "full"`. Set false to lock write/bash access out entirely. Default true. */
-	allowFullMode?: boolean;
-	/** Forward pi's skills block into the delegated system prompt. Default true. */
-	appendSkills?: boolean;
-}
-
 /** Low-level Claude Agent SDK plumbing. Most users won't need these. */
 export interface ProviderConfig {
 	/** Append pi's AGENTS.md and skills block to the Claude Code system prompt. Default true. */
@@ -50,7 +29,6 @@ export interface ProviderConfig {
 }
 
 export interface Config {
-	askClaude?: AskClaudeConfig;
 	provider?: ProviderConfig;
 }
 
@@ -81,7 +59,6 @@ export function loadConfig(cwd: string): Config {
 	const global = tryParseJson(globalConfigPath());
 	const project = tryParseJson(projectConfigPath(cwd));
 	return {
-		askClaude: { ...global.askClaude, ...project.askClaude },
 		provider: { ...global.provider, ...project.provider },
 	};
 }

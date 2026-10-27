@@ -64,16 +64,6 @@ export const REASONING_TO_EFFORT: Record<string, EffortLevel> = {
 /** Contexts for queries currently in flight, including reentrant subagent queries. */
 const activeQueryContexts = new Set<QueryContext>();
 
-/** Name of the AskClaude tool, so the provider can exclude it from the MCP bridge and avoid
- *  offering Claude Code a tool that delegates straight back to Claude Code. Overwritten at
- *  activation by setAskClaudeToolName with the configured name; the initial value only
- *  matters if a turn somehow runs before registration. */
-let askClaudeToolName = "";
-
-export function setAskClaudeToolName(name: string): void {
-	askClaudeToolName = name;
-}
-
 /**
  * Rotate the top-level Claude Code query before Pi installs a compaction boundary.
  *
@@ -518,7 +508,7 @@ function startFreshQuery(
 	queryCtx.latestCursor = 0;
 
 	const providerSettings = getProviderSettings();
-	const { mcpTools, customToolNameToSdk, customToolNameToPi } = resolveMcpTools(context, askClaudeToolName);
+	const { mcpTools, customToolNameToSdk, customToolNameToPi } = resolveMcpTools(context);
 	const cwd = process.cwd();
 	const syncResult = syncSharedSession(
 		context.messages,

@@ -1,17 +1,5 @@
-// Extension entry point.
-//
-// Registers two things:
-//   1. The claude-subscription provider — Claude models usable directly in pi, with every
-//      tool call flowing back through pi's TUI.
-//   2. The AskClaude tool — available when some other provider is active, for delegating
-//      a question or task to Claude Code.
-//
-// Everything below is wiring; the behaviour lives in provider.ts, stream.ts,
-// session-sync.ts, tool-bridge.ts and ask-claude.ts.
-
 import { getModels } from "@earendil-works/pi-ai/compat";
 import { compact, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { registerAskClaudeTool } from "./ask-claude.js";
 import { loadConfig } from "./config.js";
 import { PROVIDER_BASE_URL, PROVIDER_ID } from "./constants.js";
 import { debug, errorMessage } from "./debug.js";
@@ -20,7 +8,6 @@ import {
 	isolatedStreamFn,
 	prepareForCompactionContinuation,
 	reinjectPriorCompactionFileOps,
-	setAskClaudeToolName,
 	streamClaudeAgentSdk,
 } from "./provider.js";
 import { clearSharedSession, markNeedsRebuild } from "./session-sync.js";
@@ -148,8 +135,4 @@ export default function activate(pi: ExtensionAPI): void {
 		// handles them as reentrant queries.
 		debug("provider: skipping re-registration, parent instance active");
 	}
-
-	// --- AskClaude tool ---
-
-	setAskClaudeToolName(registerAskClaudeTool(pi, config.askClaude, MODELS));
 }

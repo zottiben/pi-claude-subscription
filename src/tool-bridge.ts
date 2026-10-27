@@ -78,13 +78,12 @@ export interface ResolvedMcpTools {
 	customToolNameToPi: Map<string, string>;
 }
 
-export function resolveMcpTools(context: TranscriptContext, excludeToolName?: string): ResolvedMcpTools {
+export function resolveMcpTools(context: TranscriptContext): ResolvedMcpTools {
 	const mcpTools: Tool[] = [];
 	const customToolNameToSdk = new Map<string, string>();
 	const customToolNameToPi = new Map<string, string>();
 
 	for (const tool of getCurrentTools(context.messages)) {
-		if (tool.name === excludeToolName) continue;
 		const sdkName = `${MCP_TOOL_PREFIX}${tool.name}`;
 		mcpTools.push(tool);
 		customToolNameToSdk.set(tool.name, sdkName);

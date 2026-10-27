@@ -3,13 +3,10 @@
 Use your **Claude subscription** as a model provider inside [pi](https://pi.dev), via the
 [Claude Agent SDK](https://github.com/anthropics/claude-agent-sdk-typescript).
 
-Two features:
-
-1. **Provider** — pick `claude-subscription/claude-opus-5-5` (and friends) with `/model`.
-   Turns run through Claude Code, but every tool call flows back through pi's TUI, so it
-   behaves like any other pi provider.
-2. **AskClaude tool** — when some *other* provider is active, delegate a question or task
-   to Claude Code and wait for the answer.
+Pick `claude-subscription/claude-opus-5-5` (and friends) with `/model`.
+Turns run through Claude Code, but every tool call flows back through pi's TUI, so it
+behaves like any other pi provider. This extension provides model access, not review
+or delegation tools.
 
 TypeScript throughout, `strict` mode, no build step — pi loads the `.ts` sources directly.
 
@@ -23,7 +20,7 @@ TypeScript throughout, `strict` mode, no build step — pi loads the `.ts` sourc
 From GitHub (no npm account needed):
 
 ```
-pi install git:github.com/zottiben/pi-claude-subscription@v0.4.2
+pi install git:github.com/zottiben/pi-claude-subscription@v0.5.0
 ```
 
 Or from a local checkout, which is also the best way to develop — the path is referenced
@@ -44,20 +41,18 @@ your user settings.
 
 ### Migrating from pi-claude-bridge
 
-The two can run side by side — the provider ids (`claude-subscription` vs `claude-bridge`),
-config filenames and env vars are all distinct. The one thing that would collide is the
-delegation tool, so this extension names its tool `AskClaudeCode` rather than `AskClaude`.
-That matters because pi *hard-fails* extension loading on a tool-name conflict, which would
-otherwise take down your whole session the moment you installed this alongside the bridge.
+The provider ids (`claude-subscription` vs `claude-bridge`), config filenames and
+environment variables are distinct. Update `defaultProvider` in
+`~/.pi/agent/settings.json` if it still points at `claude-bridge`, then run
+`pi remove npm:pi-claude-bridge` when migration is complete.
 
-Once the bridge is gone you can have the shorter name back:
+### Upgrading from v0.4.x
 
-```json
-{ "askClaude": { "name": "AskClaude" } }
-```
-
-Remember to update `defaultProvider` in `~/.pi/agent/settings.json` if it still points at
-`claude-bridge`, and to `pi remove npm:pi-claude-bridge` when you're done.
+Version 0.5.0 removes `AskClaudeCode` and its delegation implementation. Existing
+`askClaude` configuration is ignored and can be deleted. Provider configuration,
+model access, tool bridging and compaction are unchanged. Restart every running Pi
+process after updating to unload the old tool. Cross-vendor review belongs in a
+separate, explicitly invoked skill, not in the provider.
 
 A git install clones the repo and runs `npm install --omit=dev` inside it. Note that
 `pi update` on a ref-pinned git source only moves the checkout — if a new version adds a
@@ -97,25 +92,6 @@ window registered with pi always matches what the extension actually requests. T
 signals auto-compaction before Claude Code's served output headroom is exhausted (128K for
 Opus, Sonnet and Haiku 5.5), rather than waiting for the last 16K of the advertised window.
 
-## AskClaudeCode tool
-
-Available whenever the active provider is *not* `claude-subscription`. Examples:
-
-- "Ask Claude to plan a fix"
-- "If you get stuck, ask Claude for help"
-- "Ask Claude to review the plan in @foo.md, implement it, then ask an isolated Claude to review the implementation"
-- "Ask Claude to poke holes in this theory"
-
-### Parameters
-
-| Parameter | Meaning |
-|---|---|
-| `prompt` | The question or task. Claude sees the full conversation by default — let it explore rather than researching up front. |
-| `mode` | `read` (default), `none`, or `full` (read + write + bash). Disable `full` with `allowFullMode: false`. |
-| `model` | `opus` (default, resolves to Opus 5.5), `sonnet` (Sonnet 5.5), `haiku` (Haiku 5.5), `fable` (Fable 5.1), or a full model id. |
-| `thinking` | `off`, `minimal`, `low`, `medium`, `high`, `xhigh`. |
-| `isolated` | `true` gives Claude a clean session with no conversation history. Default `false`. |
-
 ## Configuration
 
 `~/.pi/agent/claude-subscription.json` (global), or `.pi/claude-subscription.json` in a
@@ -123,11 +99,6 @@ project (merged over global, key by key).
 
 ```json
 {
-  "askClaude": {
-    "enabled": true,
-    "allowFullMode": true,
-    "defaultIsolated": false
-  },
   "provider": {
     "plan": "max",
     "longContextExtraUsage": false,
@@ -135,19 +106,6 @@ project (merged over global, key by key).
   }
 }
 ```
-
-### `askClaude`
-
-| Key | Default | Meaning |
-|---|---|---|
-| `enabled` | `true` | Register the tool at all. |
-| `name` | `"AskClaudeCode"` | Tool name as the model sees it. See [Migrating from pi-claude-bridge](#migrating-from-pi-claude-bridge). |
-| `label` | `"Ask Claude Code"` | Label in the TUI. |
-| `description` | — | Override the description shown to the calling model. |
-| `defaultMode` | `"read"` | Mode when the caller omits one. |
-| `defaultIsolated` | `false` | Start each call in a fresh session. |
-| `allowFullMode` | `true` | Set `false` to lock out write/bash access entirely. |
-| `appendSkills` | `true` | Forward pi's skills block into the delegated system prompt. |
 
 ### `provider`
 
@@ -188,7 +146,6 @@ deliberately excluded from `npm test` and from CI.
 | `stream.ts` | SDK message stream → pi assistant event stream |
 | `session-sync.ts` | REUSE/REBUILD decisions keeping Claude Code's session JSONL in step with pi |
 | `tool-bridge.ts` | Exposing pi's tools over MCP and translating names/arguments |
-| `ask-claude.ts` | The AskClaude tool and its mode gate |
 | `convert.ts` | pi → Anthropic message conversion |
 | `models.ts` | Model catalogue and the long-context policy |
 
@@ -201,7 +158,7 @@ Set `CLAUDE_SUBSCRIPTION_DEBUG=1`:
   `CLAUDE_SUBSCRIPTION_DEBUG_PATH`.
 - **Per-query Claude Code CLI logs** at `~/.pi/agent/cc-cli-logs/<timestamp>-<tag>-<seq>.log`
   — the subprocess's own debug stream, one file per query. Tags are `provider` (main turn),
-  `continuation` (steer replay), `askclaude`, or `compact-summary`.
+  `continuation` (steer replay), or `compact-summary`.
 
 For a session-resume failure ("No conversation found"), the useful attachments are the
 `syncResult:` lines from the extension log plus the matching `cc-cli-logs/` file.
@@ -213,9 +170,6 @@ Unconditional diagnostics for should-never-happen paths land in
 
 After a Claude Code release:
 
-- Review `MODE_DISALLOWED_TOOLS` in `src/ask-claude.ts`. It gates which Claude Code tools an
-  AskClaudeCode delegation may invoke per mode; new agentic tools that shouldn't be
-  reachable from a subagent belong in the appropriate list.
 - Re-run `npm run diag:context` and reconcile `src/models.ts` against it. The served context
   window is entitlement, not a property of the model, and it has changed before — see
   [diag/CONTEXT-SIZE.md](diag/CONTEXT-SIZE.md).
